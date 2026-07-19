@@ -25,4 +25,10 @@ RSpec.describe "axn-openapi inside Rails" do
     expect(last_response.status).to eq(422)
     expect(JSON.parse(last_response.body)["error"]["message"]).to eq("Amount too large")
   end
+
+  it "flows request-derived ambient_context from the HTTP request into the tool" do
+    post "/loans/whoami", "{}", "CONTENT_TYPE" => "application/json", "HTTP_X_ACTOR" => "alice"
+    expect(last_response.status).to eq(200)
+    expect(JSON.parse(last_response.body)).to eq("actor" => "alice")
+  end
 end
