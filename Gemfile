@@ -1,0 +1,15 @@
+# frozen_string_literal: true
+
+source "https://rubygems.org"
+
+# Specify your gem's dependencies in axn-openapi.gemspec
+gemspec
+
+# Temporary: track axn's main branch until the features this gem relies on ship in a released
+# version. Flip back to the released gem (drop this line) once that lands.
+gem "axn", github: "teamshares/axn", branch: "main"
+
+gem "lefthook", "~> 1.7" # Git-hook manager (pre-commit RuboCop on staged files)
+gem "rake", "~> 13.0"
+gem "rspec", "~> 3.0"
+gem "rubocop", "~> 1.21"
