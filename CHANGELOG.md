@@ -61,3 +61,10 @@
   usage, the config table, the full status-code table with an explicit note on the 400-vs-422
   design), and a new `AGENTS-consuming.md` (agent-facing usage guide, allowlisted into the gem
   package).
+- `[INTERNAL]` Rails integration coverage in the `spec_rails/dummy_app`: `EchoTool`/`RefuseTool`
+  fixtures under `app/agent_tools/` (Zeitwerk-autoloaded), a `LoansController < ActionController::API`
+  exercising `Axn::OpenAPI::Controller#render_axn` with request-derived `ambient_context`, and routes
+  mounting `Axn::OpenAPI.app(tools: [EchoTool])` at `/api` alongside `post "/loans/approve"`. A new
+  `spec/openapi_integration_spec.rb` drives both skins over real HTTP via `Rack::Test` (no
+  `rspec-rails`/`type: :request` in this dummy app): a mounted tool call, the mounted `/openapi.json`,
+  and the controller mixin mapping `fail!` to 422.
