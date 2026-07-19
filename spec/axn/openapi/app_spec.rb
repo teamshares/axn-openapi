@@ -23,4 +23,11 @@ RSpec.describe Axn::OpenAPI::App do
     res = Rack::MockRequest.new(ctx_app).post("/context_echo_tool", input: "{}", "HTTP_X_ACTOR" => "alice")
     expect(JSON.parse(res.body)).to eq("actor" => "alice")
   end
+
+  it "forwards an instance path_prefix into the served spec" do
+    app = described_class.new(tools: [EchoTool], path_prefix: "/axns")
+    res = Rack::MockRequest.new(app).get("/axns/openapi.json")
+    expect(res.status).to eq(200)
+    expect(JSON.parse(res.body)["paths"]).to have_key("/axns/echo_tool")
+  end
 end

@@ -37,4 +37,13 @@ RSpec.describe Axn::OpenAPI::Router do
     r = described_class.new(tools: [EchoTool], path_prefix: "/axns")
     expect(r.route(http_method: "POST", path: "/axns/echo_tool", raw_body: '{"message":"hi"}').status).to eq(200)
   end
+
+  it "405s a non-GET verb on the spec path" do
+    expect(route("POST", "/openapi.json", body: "{}").status).to eq(405)
+  end
+
+  it "400s a JSON body that isn't an object" do
+    d = route("POST", "/echo_tool", body: "[1,2,3]")
+    expect(d.status).to eq(400)
+  end
 end

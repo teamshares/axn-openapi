@@ -16,4 +16,15 @@ RSpec.describe Axn::OpenAPI::Response do
     expect(headers["content-type"]).to eq("application/json")
     expect(JSON.parse(body.first)).to eq("echoed" => "hi")
   end
+
+  it "compares by value" do
+    a = described_class.new(status: 200, body: "x", headers: { "a" => "b" })
+    b = described_class.new(status: 200, body: "x", headers: { "a" => "b" })
+    expect(a).to eq(b)
+  end
+
+  it "defaults a nil body to an empty JSON object" do
+    _, _, body = described_class.json(nil).to_rack
+    expect(body).to eq(["{}"])
+  end
 end

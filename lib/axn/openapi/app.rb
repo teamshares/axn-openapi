@@ -10,7 +10,7 @@ module Axn
       def initialize(tools: nil, context: nil, path_prefix: nil, spec_path: nil, spec_provider: nil)
         @tools = tools || Axn.tools_for(:openapi)
         @context = context || ->(_env) { {} }
-        provider = spec_provider || -> { SpecGenerator.new(tools: @tools).generate }
+        provider = spec_provider || -> { SpecGenerator.new(tools: @tools, path_prefix:).generate }
         @router = Router.new(tools: @tools, path_prefix:, spec_path:, spec_provider: provider)
       end
 

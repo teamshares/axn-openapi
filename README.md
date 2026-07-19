@@ -71,6 +71,9 @@ curl http://localhost:3000/api/openapi.json
 # => the OpenAPI 3.1 document
 ```
 
+The document's `paths` are mount-relative — they read `/approve_loan`, not `/api/approve_loan` —
+so client codegen against the spec needs to account for the mount base separately.
+
 The gem is framework-agnostic — `Axn::OpenAPI.app` is a plain Rack app, so it also `run`s in a bare
 `config.ru` outside Rails entirely.
 
