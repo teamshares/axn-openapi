@@ -1,0 +1,36 @@
+# frozen_string_literal: true
+
+RSpec.describe Axn::OpenAPI::Controller do
+  # Minimal stand-in for an ActionController: exposes #request.raw_post and captures #render.
+  let(:controller_class) do
+    Class.new do
+      include Axn::OpenAPI::Controller
+
+      attr_accessor :rendered
+
+      Req = Struct.new(:raw_post) # rubocop:disable Lint/ConstantDefinitionInBlock -- scoped to this anonymous test double
+      def initialize(body) = @body = body
+      def request = Req.new(@body)
+      def render(json:, status:) = self.rendered = { json:, status: }
+    end
+  end
+
+  it "dispatches the given Axn and renders json + status" do
+    c = controller_class.new('{"message":"hi"}')
+    c.render_axn(EchoTool)
+    expect(c.rendered[:status]).to eq(200)
+    expect(c.rendered[:json]).to eq("echoed" => "hi")
+  end
+
+  it "forwards ambient_context (e.g. current_user)" do
+    c = controller_class.new("{}")
+    c.render_axn(ContextEchoTool, ambient_context: { actor: "bob" })
+    expect(c.rendered[:json]).to eq("actor" => "bob")
+  end
+
+  it "maps a business failure to 422" do
+    c = controller_class.new('{"amount":5}')
+    c.render_axn(RefuseTool)
+    expect(c.rendered[:status]).to eq(422)
+  end
+end

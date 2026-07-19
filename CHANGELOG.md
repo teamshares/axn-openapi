@@ -35,3 +35,11 @@
   `->(_env) { {} }`) into the trusted `ambient_context` — the auth seam the gem offers but does not
   own — and delegates to `Router#route`, rendering the resulting `Dispatch` via
   `Response.json(...).to_rack`. Adds `rack` (`>= 2.2`) as a runtime dependency.
+- `[FEAT]` `Axn::OpenAPI::Controller` is the third skin: `include` it into a Rails (or any
+  duck-typed `request`/`render`) controller for consumers who want to own their own routing/auth
+  stack. `#render_axn(axn_class, ambient_context: {})` reads `request.raw_post`, parses it as JSON
+  (blank or malformed body → `{}`, which surfaces downstream as a normal 400
+  `InboundValidationError` if required fields are missing — the mixin has no dedicated 400
+  parse-error envelope like `Router` does), delegates straight to `Dispatcher.call` (bypassing
+  `Router` entirely since the controller owns routing), and renders `render json: dispatch.body,
+  status: dispatch.status`. The module itself references no Rails constants at load time.
