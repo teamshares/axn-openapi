@@ -44,3 +44,5 @@ end
 require_relative "openapi/response"
 require_relative "openapi/errors"
 require_relative "openapi/serializer"
+require_relative "openapi/dispatch"
+require_relative "openapi/dispatcher"
