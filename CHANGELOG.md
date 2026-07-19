@@ -18,3 +18,13 @@
   failure, and a generic no-leak 500 on any other exception or on an `UnserializableExposureError`
   from strict serialization (logged via `Axn.config.logger.error`). `params` top-level keys are
   symbolized before the Invoker's `**` splat; nested Hashes are passed through as-is.
+- `[FEAT]` `Axn::OpenAPI::Request` (`Data.define(:http_method, :path, :raw_body)`) is a
+  Rails-agnostic view of an inbound HTTP request, with `.from_rack(env)` reading and rewinding
+  `rack.input`. `Axn::OpenAPI::Router.new(tools:, path_prefix: nil, spec_path: nil,
+  spec_provider: nil)` maps `#route(http_method:, path:, raw_body:, ambient_context: {})` to a
+  `Dispatch`: strips the configured `path_prefix` (defaults from `Axn::OpenAPI.config`), serves
+  `spec_provider.call` (default `-> { {} }`; the real `SpecGenerator` wiring lands in a later task)
+  at `spec_path` on GET, looks tools up by `tool_name(:openapi)`, and owns the pre-dispatch
+  HTTP-layer cases — 404 unknown tool, 405 wrong verb (including on the spec route), and 400 for a
+  genuinely malformed non-empty JSON body or a parsed non-Hash JSON value (a blank body parses to
+  `{}` and dispatches normally). All other requests delegate to `Dispatcher.call`.
