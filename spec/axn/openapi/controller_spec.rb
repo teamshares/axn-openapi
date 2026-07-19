@@ -8,9 +8,8 @@ RSpec.describe Axn::OpenAPI::Controller do
 
       attr_accessor :rendered
 
-      Req = Struct.new(:raw_post) # rubocop:disable Lint/ConstantDefinitionInBlock -- scoped to this anonymous test double
       def initialize(body) = @body = body
-      def request = Req.new(@body)
+      def request = Struct.new(:raw_post).new(@body)
       def render(json:, status:) = self.rendered = { json:, status: }
     end
   end
