@@ -23,8 +23,8 @@
   `rack.input`. `Axn::OpenAPI::Router.new(tools:, path_prefix: nil, spec_path: nil,
   spec_provider: nil)` maps `#route(http_method:, path:, raw_body:, ambient_context: {})` to a
   `Dispatch`: strips the configured `path_prefix` (defaults from `Axn::OpenAPI.config`), serves
-  `spec_provider.call` (default `-> { {} }`; the real `SpecGenerator` wiring lands in a later task)
-  at `spec_path` on GET, looks tools up by `tool_name(:openapi)`, and owns the pre-dispatch
+  `spec_provider.call` (defaults to `-> { {} }`; `App` wires a real `SpecGenerator` by default — see
+  below) at `spec_path` on GET, looks tools up by `tool_name(:openapi)`, and owns the pre-dispatch
   HTTP-layer cases — 404 unknown tool, 405 wrong verb (including on the spec route), and 400 for a
   genuinely malformed non-empty JSON body or a parsed non-Hash JSON value (a blank body parses to
   `{}` and dispatches normally). All other requests delegate to `Dispatcher.call`.
@@ -52,3 +52,12 @@
   parse-error envelope like `Router` does), delegates straight to `Dispatcher.call` (bypassing
   `Router` entirely since the controller owns routing), and renders `render json: dispatch.body,
   status: dispatch.status`. The module itself references no Rails constants at load time.
+- `[FEAT]` Module-level facade: `Axn::OpenAPI.tools` (`Axn.tools_for(:openapi)`), `Axn::OpenAPI.app(
+  tools: nil, context: nil, path_prefix: nil, spec_path: nil)` (builds an `App` over `tools:` or
+  every registered tool), and `Axn::OpenAPI.spec(tools: nil, path_prefix: nil, info: nil)` (builds a
+  `SpecGenerator` and calls `#generate`) — the one-liner public entry points that tie `App` and
+  `SpecGenerator` to the tool registry, so a consumer never has to reach for `App.new`/
+  `SpecGenerator.new` directly. Ships user-facing docs: a rewritten `README.md` (mount/controller
+  usage, the config table, the full status-code table with an explicit note on the 400-vs-422
+  design), and a new `AGENTS-consuming.md` (agent-facing usage guide, allowlisted into the gem
+  package).

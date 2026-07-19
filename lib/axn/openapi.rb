@@ -35,6 +35,21 @@ module Axn
       @deprecator ||= ActiveSupport::Deprecation.new("1.0", "axn-openapi")
     end
 
+    # The registered :openapi tool set (directory-root grants ∪ `tool :openapi` declarations).
+    def self.tools
+      Axn.tools_for(:openapi)
+    end
+
+    # A mountable Rack app over the given tools (default: every registered :openapi tool).
+    def self.app(tools: nil, context: nil, path_prefix: nil, spec_path: nil)
+      App.new(tools: tools || self.tools, context:, path_prefix:, spec_path:)
+    end
+
+    # The OpenAPI 3.1 document for the given tools (default: every registered :openapi tool).
+    def self.spec(tools: nil, path_prefix: nil, info: nil)
+      SpecGenerator.new(tools: tools || self.tools, path_prefix:, info:).generate
+    end
+
     # Register :openapi with core's process-global registry, passing this module as the config
     # source so the registry reads Axn::OpenAPI.config.tool_roots for directory membership.
     Axn.register_tool_adapter(:openapi, self)
