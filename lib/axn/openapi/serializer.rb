@@ -29,8 +29,14 @@ module Axn
         return if SAFE_LEAVES.any? { |k| value.is_a?(k) }
         return value.each { |k, v| assert_serializable!(v, "#{path}.#{k}") } if value.is_a?(Hash)
         return value.each_with_index { |v, i| assert_serializable!(v, "#{path}[#{i}]") } if value.is_a?(Array)
-        return if Axn::Reflection::Values.follow_as_json?(value) # serialize_value follows as_json
-        return if value.respond_to?(:to_h)                       # serialize_value follows to_h
+        # serialize_value follows as_json (own) or to_h and then RECURSES into the returned
+        # structure (values.rb) — so the guard must recurse too, or a nested opaque leaf inside a
+        # custom to_h/as_json result would render via default to_s unchecked. Same order as
+        # serialize_value: as_json first, then to_h. This re-invokes as_json/to_h (serialize_exposed
+        # calls them again) — an accepted cost: strict mode trades a second pure-projection call for
+        # catching un-serializable nested values.
+        return assert_serializable!(value.as_json, path) if Axn::Reflection::Values.follow_as_json?(value)
+        return assert_serializable!(value.to_h, path) if value.respond_to?(:to_h)
         return unless DEFAULT_TO_S_OWNERS.include?(value.method(:to_s).owner)
 
         raise UnserializableExposureError.new(path, value)

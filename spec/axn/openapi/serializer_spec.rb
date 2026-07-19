@@ -37,4 +37,35 @@ RSpec.describe Axn::OpenAPI::Serializer do
   it "never raises when strict is false (mirrors MCP leniency)" do
     expect { serialize(OpaqueTool, strict: false) }.not_to raise_error
   end
+
+  it "serializes a nested Hash/Array of safe leaves without raising" do
+    klass = Class.new do
+      include Axn
+
+      exposes :data
+      def call = expose(data: { "items" => [1, 2], "when" => Time.utc(2020, 1, 1) })
+    end
+    expect(serialize(klass)["data"]).to eq("items" => [1, 2], "when" => "2020-01-01T00:00:00Z")
+  end
+
+  it "raises when a value nested inside a Hash is unserializable (strict)" do
+    klass = Class.new do
+      include Axn
+
+      exposes :data
+      def call = expose(data: { "bad" => OpaqueValue.new })
+    end
+    expect { serialize(klass) }.to raise_error(Axn::OpenAPI::UnserializableExposureError, /data\.bad/)
+  end
+
+  it "raises when a custom to_h returns a structure with an unserializable leaf (strict)" do
+    wrapper = Class.new { def to_h = { inner: OpaqueValue.new } }
+    klass = Class.new do
+      include Axn
+
+      exposes :wrapped
+      define_method(:call) { expose(wrapped: wrapper.new) }
+    end
+    expect { serialize(klass) }.to raise_error(Axn::OpenAPI::UnserializableExposureError, /wrapped\.inner/)
+  end
 end
