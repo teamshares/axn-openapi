@@ -35,6 +35,15 @@
   `->(_env) { {} }`) into the trusted `ambient_context` — the auth seam the gem offers but does not
   own — and delegates to `Router#route`, rendering the resulting `Dispatch` via
   `Response.json(...).to_rack`. Adds `rack` (`>= 2.2`) as a runtime dependency.
+- `[FEAT]` `Axn::OpenAPI::SpecGenerator.new(tools:, path_prefix: nil, info: nil).generate` assembles
+  the OpenAPI 3.1 document `App`'s default `spec_provider` serves: one POST path per tool at
+  `"#{path_prefix}/#{tool_name(:openapi)}"` (`path_prefix` defaults from `Axn::OpenAPI.config`),
+  `operationId` = `tool_name(:openapi)`, `summary` = `description` (omitted when undeclared),
+  `requestBody`/`200` schemas taken verbatim from `input_schema`/`output_schema`, and `400`/`422`/
+  `500` responses all referencing a shared `#/components/schemas/Error` component. Non-empty
+  `_semantic_hints` are emitted as the `x-axn-semantic-hints` vendor extension (an array — plural,
+  since a tool can carry more than one hint). `info` defaults from `Axn::OpenAPI.config.info_*`
+  (`info_description` omitted when nil).
 - `[FEAT]` `Axn::OpenAPI::Controller` is the third skin: `include` it into a Rails (or any
   duck-typed `request`/`render`) controller for consumers who want to own their own routing/auth
   stack. `#render_axn(axn_class, ambient_context: {})` reads `request.raw_post`, parses it as JSON

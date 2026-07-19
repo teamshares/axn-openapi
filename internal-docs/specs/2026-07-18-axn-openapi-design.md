@@ -70,9 +70,10 @@ layer; OpenAPI is the generated artifact.
   is deferred (the signal is preserved — see below).
 * **Per-operation metadata, mechanical from reflection:** `operationId = tool_name`;
   `summary` / `description` from the Axn's declared `description`.
-* **Semantic hint as a vendor extension:** emit `x-axn-semantic-hint: <read_only|idempotent|destructive>`
-  in the operation object so the signal (from core `semantic_hints`) rides along in the doc at zero
-  cost — the hook for a future `read_only → GET` mapping.
+* **Semantic hints as a vendor extension:** emit `x-axn-semantic-hints: [<read_only|idempotent|destructive>, ...]`
+  (an array — plural, since `_semantic_hints` can hold more than one) in the operation object so the
+  signal (from core `semantic_hints`) rides along in the doc at zero cost — the hook for a future
+  `read_only → GET` mapping.
 * **Routing edges:** unknown path → `404`, known tool path + wrong verb → `405`, `GET /openapi.json`
   → the spec.
 
@@ -229,7 +230,7 @@ consumer building tooling on the doc isn't misled.
   consumer's controller supplies auth/filters and builds `ambient_context`.
 * **Spec generator** — `tools_for(:openapi)` (or explicit list) → assemble paths (one per tool),
   `requestBody` = `input_schema`, `responses` = `output_schema` + shared error component,
-  `operationId`/`summary`/`description`/`x-axn-semantic-hint` from reflection → `info` block.
+  `operationId`/`summary`/`description`/`x-axn-semantic-hints` from reflection → `info` block.
 * **Response** — status + JSON body value object with `.to_rack`.
 * **Config** (`Axn::Configurable`) — `path_prefix`, spec path, `reject_undeclared_inputs` (default
   false), strict-serialization guard (default true), `info` (title/version/description).
