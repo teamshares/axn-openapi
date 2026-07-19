@@ -28,3 +28,10 @@
   HTTP-layer cases — 404 unknown tool, 405 wrong verb (including on the spec route), and 400 for a
   genuinely malformed non-empty JSON body or a parsed non-Hash JSON value (a blank body parses to
   `{}` and dispatches normally). All other requests delegate to `Dispatcher.call`.
+- `[FEAT]` `Axn::OpenAPI::App.new(tools: nil, context: nil, path_prefix: nil, spec_path: nil,
+  spec_provider: nil)` is a framework-agnostic Rack app (`#call(env)`) directly `mount`able in a
+  Rails routes file (`mount Axn::OpenAPI::App.new(...) => "/api"`) or `run`-able in a bare
+  `Rack::Builder`. Builds a `Request` from the Rack env, resolves `context.call(env)` (default
+  `->(_env) { {} }`) into the trusted `ambient_context` — the auth seam the gem offers but does not
+  own — and delegates to `Router#route`, rendering the resulting `Dispatch` via
+  `Response.json(...).to_rack`. Adds `rack` (`>= 2.2`) as a runtime dependency.

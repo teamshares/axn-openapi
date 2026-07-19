@@ -42,3 +42,13 @@ class OpaqueTool
   exposes :thing
   def call = expose(thing: OpaqueValue.new)
 end
+
+# Reads a value from ambient_context (the auth/request-context seam) and echoes it.
+class ContextEchoTool
+  include Axn
+
+  tool :openapi
+  expects :actor, on: :ambient_context, type: String, allow_nil: true
+  exposes :actor, type: String, allow_nil: true
+  def call = expose(actor:)
+end
