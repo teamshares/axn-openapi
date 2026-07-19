@@ -40,3 +40,5 @@ module Axn
     Axn.register_tool_adapter(:openapi, self)
   end
 end
+
+require_relative "openapi/response"
