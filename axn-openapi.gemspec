@@ -4,7 +4,7 @@ require_relative "lib/axn/openapi/version"
 
 Gem::Specification.new do |spec|
   spec.name = "axn-openapi"
-  spec.version = Axn::Openapi::VERSION
+  spec.version = Axn::OpenAPI::VERSION
   spec.authors = ["Kali Donovan"]
   spec.email = ["kali@teamshares.com"]
 
