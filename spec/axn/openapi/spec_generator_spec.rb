@@ -33,4 +33,14 @@ RSpec.describe Axn::OpenAPI::SpecGenerator do
     d = described_class.new(tools: [EchoTool], path_prefix: "/axns").generate
     expect(d["paths"]).to have_key("/axns/echo_tool/v1")
   end
+
+  it "emits a tool's semantic hints as a plural vendor extension" do
+    op = doc.dig("paths", "/echo_tool/v1", "post")
+    expect(op["x-axn-semantic-hints"]).to eq(["read_only"])
+  end
+
+  it "omits the vendor extension for a tool with no semantic hints" do
+    op = doc.dig("paths", "/calc/v1", "post")
+    expect(op).not_to have_key("x-axn-semantic-hints")
+  end
 end
