@@ -52,7 +52,7 @@
   parse-error envelope like `Router` does), delegates straight to `Dispatcher.call` (bypassing
   `Router` entirely since the controller owns routing), and renders `render json: dispatch.body,
   status: dispatch.status`. The module itself references no Rails constants at load time.
-- `[FEAT]` Module-level facade: `Axn::OpenAPI.tools` (`Axn.tools_for(:openapi)`), `Axn::OpenAPI.app(
+- `[FEAT]` Module-level facade: `Axn::OpenAPI.tools` (`Axn.tools_for(:openapi, all_versions: true)`), `Axn::OpenAPI.app(
   tools: nil, context: nil, path_prefix: nil, spec_path: nil)` (builds an `App` over `tools:` or
   every registered tool), and `Axn::OpenAPI.spec(tools: nil, path_prefix: nil, info: nil)` (builds a
   `SpecGenerator` and calls `#generate`) — the one-liner public entry points that tie `App` and
@@ -61,6 +61,14 @@
   usage, the config table, the full status-code table with an explicit note on the 400-vs-422
   design), and a new `AGENTS-consuming.md` (agent-facing usage guide, allowlisted into the gem
   package).
+- `[FEAT]` `Axn::OpenAPI::RouteTable.build(tools:, path_prefix:)` is the single source of the
+  tool→path map, ordered by `tool_name(:openapi)` then ascending `tool_version` (undeclared version
+  defaults to `1`): one `Axn::OpenAPI::RouteEntry` (`Data.define(:path, :axn, :operation_id)`) per
+  tool version, with `path` = `"#{path_prefix}/#{tool_name}/v#{tool_version}"` and `operation_id` =
+  `"#{tool_name}_v#{tool_version}"`. `Axn::OpenAPI.tools` now returns `Axn.tools_for(:openapi,
+  all_versions: true)` (every declared version of each tool) instead of the latest-per-tool_name
+  view, so a stable HTTP contract can eventually address every version at its own path. This task is
+  additive scaffolding — `Router` and `SpecGenerator` don't consume `RouteTable` yet.
 - `[INTERNAL]` Rails integration coverage in the `spec_rails/dummy_app`: `EchoTool`/`RefuseTool`
   fixtures under `app/agent_tools/` (Zeitwerk-autoloaded), a `LoansController < ActionController::API`
   exercising `Axn::OpenAPI::Controller#render_axn` with request-derived `ambient_context`, and routes

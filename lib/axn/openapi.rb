@@ -35,9 +35,11 @@ module Axn
       @deprecator ||= ActiveSupport::Deprecation.new("1.0", "axn-openapi")
     end
 
-    # The registered :openapi tool set (directory-root grants ∪ `tool :openapi` declarations).
+    # The registered :openapi tool set (directory-root grants ∪ `tool :openapi` declarations),
+    # every declared version of each tool — a stable HTTP contract serves each version at its own
+    # path, so callers must not be limited to the latest-per-tool_name view.
     def self.tools
-      Axn.tools_for(:openapi)
+      Axn.tools_for(:openapi, all_versions: true)
     end
 
     # A mountable Rack app over the given tools (default: every registered :openapi tool).
@@ -66,3 +68,4 @@ require_relative "openapi/router"
 require_relative "openapi/app"
 require_relative "openapi/controller"
 require_relative "openapi/spec_generator"
+require_relative "openapi/route_table"
