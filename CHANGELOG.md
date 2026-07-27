@@ -2,11 +2,12 @@
 
 ## Unreleased
 
-- `[BUGFIX]` A successful Axn whose exposed body isn't JSON-encodable now maps to the documented
-  generic `500` envelope instead of raising `JSON::GeneratorError` mid-render (which escaped the Rack
-  app / host framework after a `200` was already decided). The dispatcher validates JSON-encodability
-  on the success path and routes any failure — a non-finite number (`Float::INFINITY`/`NaN`) or a
-  `String` with invalid UTF-8 — through the same no-leak 500 path. Works regardless of
+- `[BUGFIX]` A successful Axn whose result can't be serialized/encoded now maps to the documented
+  generic `500` envelope instead of raising mid-render (which escaped the Rack app / host framework
+  after a `200` was already decided). The dispatcher's success path is a render boundary that routes
+  every such failure through the same no-leak 500: a non-finite number (`Float::INFINITY`/`NaN`), a
+  `String` with invalid UTF-8 (both caught by a `JSON.generate` encodability check), and an arbitrary
+  exception raised by a value's own `as_json`/`to_h` projection. Works regardless of
   `strict_serialization` (the strict serializer still runs first for a precise field-level message on
   garbage-but-valid-JSON `to_s` projections).
 - `[BUGFIX]` The strict serializer now validates Hash **keys**, not just values: `serialize_value`

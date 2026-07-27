@@ -55,4 +55,17 @@ RSpec.describe Axn::OpenAPI::Dispatcher do
     expect(d.status).to eq(500)
     expect(d.body).to eq("error" => { "message" => "Internal Server Error" })
   end
+
+  it "returns 500 (no leak) when a value's own projection raises during serialization" do
+    exploding = Class.new { def to_h = raise("boom in to_h") }
+    klass = Class.new do
+      include Axn
+
+      exposes :thing
+      define_method(:call) { expose(thing: exploding.new) }
+    end
+    d = dispatch(klass, {})
+    expect(d.status).to eq(500)
+    expect(d.body).to eq("error" => { "message" => "Internal Server Error" })
+  end
 end

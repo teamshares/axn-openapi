@@ -40,8 +40,15 @@ module Axn
         # precise field-level message for garbage `to_s` projections that ARE valid JSON.)
         JSON.generate(body)
         Dispatch.new(200, body)
-      rescue UnserializableExposureError, JSON::GeneratorError => e
-        Axn.config.logger.error { "[axn-openapi] unencodable success body: #{e.message}" }
+      rescue StandardError => e
+        # A successful Axn whose result can't be serialized/encoded is a server-side problem, not a
+        # 200: an unrepresentable value (UnserializableExposureError), a JSON encode failure
+        # (JSON::GeneratorError), OR an arbitrary exception raised by a value's own as_json/to_h
+        # projection during serialize_exposed. This is the render boundary — none of these may escape
+        # the Rack app / controller renderer, so all map to the documented generic 500 (logged for the
+        # operator, nothing leaked to the caller). Scoped tight: the only code above that can raise is
+        # serialization + JSON.generate.
+        Axn.config.logger.error { "[axn-openapi] failed to serialize successful result: #{e.class}: #{e.message}" }
         Dispatch.new(500, GENERIC_500)
       end
 
