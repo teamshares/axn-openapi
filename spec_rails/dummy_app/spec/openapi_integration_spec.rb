@@ -31,4 +31,25 @@ RSpec.describe "axn-openapi inside Rails" do
     expect(last_response.status).to eq(200)
     expect(JSON.parse(last_response.body)).to eq("actor" => "alice")
   end
+
+  it "serves two coexisting versions of a tool at distinct paths with distinct contracts" do
+    post "/api/greeter/v1", '{"subject":"ada"}', "CONTENT_TYPE" => "application/json"
+    expect(last_response.status).to eq(200)
+    expect(JSON.parse(last_response.body)).to eq("greeting" => "hi ada")
+
+    post "/api/greeter/v2", '{"subject":"ada"}', "CONTENT_TYPE" => "application/json"
+    expect(last_response.status).to eq(200)
+    expect(JSON.parse(last_response.body)).to eq("greeting" => "Hello, ada!")
+  end
+
+  it "lists both versions in the served spec" do
+    get "/api/openapi.json"
+    expect(JSON.parse(last_response.body)["paths"].keys).to include("/greeter/v1", "/greeter/v2")
+  end
+
+  it "404s a nonexistent version with a pointer to the latest" do
+    post "/api/greeter/v9", "{}", "CONTENT_TYPE" => "application/json"
+    expect(last_response.status).to eq(404)
+    expect(JSON.parse(last_response.body)["error"]["message"]).to include("/greeter/v2")
+  end
 end

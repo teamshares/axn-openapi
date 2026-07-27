@@ -60,19 +60,25 @@ end
 ```
 
 `Axn::OpenAPI.app` defaults to every registered `:openapi` tool. **The mount point is the path
-prefix** — `mount ... => "/api"` means `ApproveLoan` is served at `POST /api/approve_loan`, and the
-generated spec at `GET /api/openapi.json`. `curl`:
+prefix** — `mount ... => "/api"` means `ApproveLoan` is served at `POST /api/approve_loan/v1`, and
+the generated spec at `GET /api/openapi.json`. Every route is versioned: the path is
+`{mount}{path_prefix}/{tool}/v{n}`, where `n` is the Axn's `tool_version` (undeclared ⇒ `1`). There
+is no bare, default, or "latest" path — a second version added later (`tool_version 2` on another
+Axn sharing the same `tool_name`) is addressable at its own `/v2` path alongside the existing `/v1`,
+never in place of it. `curl`:
 
 ```bash
-curl -X POST http://localhost:3000/api/approve_loan -d '{"loan_id": 42}'
+curl -X POST http://localhost:3000/api/approve_loan/v1 -d '{"loan_id": 42}'
 # => {"status":"approved"}
 
 curl http://localhost:3000/api/openapi.json
 # => the OpenAPI 3.1 document
 ```
 
-The document's `paths` are mount-relative — they read `/approve_loan`, not `/api/approve_loan` —
-so client codegen against the spec needs to account for the mount base separately.
+The document's `paths` are mount-relative — they read `/approve_loan/v1`, not
+`/api/approve_loan/v1` — so client codegen against the spec needs to account for the mount base
+separately. To find the newest version of a tool, read the spec's `paths` and take the highest
+`vN` for that tool — there is no dedicated "latest" endpoint or route.
 
 The gem is framework-agnostic — `Axn::OpenAPI.app` is a plain Rack app, so it also `run`s in a bare
 `config.ru` outside Rails entirely.
@@ -84,8 +90,9 @@ behavior is identical either way — pick based on whether you want this gem to 
 
 ### 1. Mount the app (`Axn::OpenAPI.app`)
 
-Owns routing: one `POST /<tool_name>` route per tool, plus `GET /openapi.json` (or your configured
-`spec_path`). Use this when you don't need per-tool routing/filters.
+Owns routing: one `POST /<tool_name>/v<n>` route per registered tool *version*, plus
+`GET /openapi.json` (or your configured `spec_path`). Use this when you don't need per-tool
+routing/filters.
 
 ```ruby
 Axn::OpenAPI.app(tools: nil, context: nil, path_prefix: nil, spec_path: nil)
@@ -202,7 +209,7 @@ find out whether a call succeeded.
 | --- | --- | --- |
 | `200` | Success | Bare `output_schema` object — the Axn's `exposes`, no wrapper |
 | `400` | Malformed JSON request body, **or** an inbound validation failure (`InboundValidationError`) — "you sent the wrong data" | `{"error": {"message": "...", "field_errors": [...]}}` |
-| `404` | Path maps to no registered tool (mount skin only) | `{"error": {"message": "..."}}` |
+| `404` | Path maps to no registered tool, **or** a known tool at an unregistered version — mount skin only. The latter's message names the latest available version's path | `{"error": {"message": "..."}}` |
 | `405` | Known tool path, wrong HTTP verb — every route is `POST` (mount skin only) | `{"error": {"message": "..."}}` |
 | `422` | A well-formed request the Axn itself refused via `fail!` — "we understood you, but can't complete the operation" | `{"error": {"message": "<the fail! message, verbatim>"}}` |
 | `500` | An unexpected exception, or a `strict_serialization` violation on an otherwise-successful result — generic message, no internal detail leaked | `{"error": {"message": "Internal Server Error"}}` |
@@ -251,10 +258,11 @@ Axn::OpenAPI.spec(tools: nil, path_prefix: nil, info: nil)
 # => the OpenAPI 3.1 document as a Hash (tools: defaults to Axn::OpenAPI.tools)
 ```
 
-One `POST` path per tool (`operationId`/`summary` from `tool_name`/`description`), `requestBody`/
-`200` schemas taken verbatim from the Axn's `input_schema`/`output_schema`, and `400`/`422`/`500`
-responses referencing the shared `Error` component. A non-empty `semantic_hints` declaration is
-emitted as the `x-axn-semantic-hints` vendor extension (an array).
+One `POST` path per tool *version* (`/{tool}/v{n}`; `operationId` is `{tool}_v{n}`, `summary` from
+`description`), `requestBody`/`200` schemas taken verbatim from that version's own
+`input_schema`/`output_schema`, and `400`/`422`/`500` responses referencing the shared `Error`
+component. A non-empty `semantic_hints` declaration is emitted as the `x-axn-semantic-hints` vendor
+extension (an array).
 
 ## Requirements
 

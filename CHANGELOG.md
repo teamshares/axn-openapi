@@ -95,3 +95,19 @@
   the gap the previous task left open — served routes (`Router`) and the documented OpenAPI paths
   now always agree, since both are derived from the same `RouteTable`. The old bare-path doc shape
   (one entry per tool name, latest version only) is gone.
+- `[INTERNAL]` End-to-end multi-version proof in the Rails dummy app: `GreeterV1`/`GreeterV2` fixtures
+  under `app/agent_tools/` share `tool_name` "greeter" via `axn_name "greeter"` (their class names
+  would otherwise derive distinct `greeter_v1`/`greeter_v2` names) and declare `tool_version 1`/`2`
+  respectively, each with its own `expects :subject`/`exposes :greeting` contract. Mounted alongside
+  `EchoTool` at `/api`, they prove two coexisting versions of one *registered* tool serve distinct
+  contracts at distinct paths (`/api/greeter/v1`, `/api/greeter/v2`), both appear in the served
+  `/api/openapi.json`, and an unregistered version (`/api/greeter/v9`) 404s with a message pointing
+  at the latest available version's path — all new `spec/openapi_integration_spec.rb` cases.
+- `[INTERNAL]` `README.md`/`AGENTS-consuming.md` routing sections rewritten for the versioned URL scheme:
+  every route is `{mount}{path_prefix}/{tool}/v{n}` (undeclared `tool_version` ⇒ `/v1`), there is no
+  bare/default/latest path, the newest version is read from the served spec's `paths` (highest `vN`)
+  rather than a dedicated route, and a 404 on a known tool's unregistered version names the latest
+  available version's path. `AGENTS-consuming.md` additionally notes that declaring `tool_version N`
+  on a second Axn sharing a `tool_name` (via `axn_name`) adds a `/vN` path without touching any
+  existing version's path. Stale example paths (`/approve_loan` → `/approve_loan/v1`) updated
+  throughout.

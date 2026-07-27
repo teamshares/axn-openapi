@@ -12,7 +12,8 @@ A plain Axn (`include Axn`) stays plain — no HTTP awareness. This gem turns it
 endpoint at the edge, two ways:
 
 - **`Axn::OpenAPI.app(**opts) → App`** — a mountable Rack app that owns routing: one
-  `POST /<tool_name>` per tool, plus `GET /openapi.json` serving the generated spec.
+  `POST /<tool_name>/v<n>` per registered tool *version*, plus `GET /openapi.json` serving the
+  generated spec.
 - **`include Axn::OpenAPI::Controller`** — a mixin for a Rails (or any duck-typed
   `request`/`render`) controller that owns its own routing; `render_axn(axn_class, ambient_context:
   {})` does the run + render.
@@ -47,13 +48,21 @@ Mount every registered tool at once:
 
 ```ruby
 # config/routes.rb
-mount Axn::OpenAPI.app => "/api"   # ApproveLoan → POST /api/approve_loan
+mount Axn::OpenAPI.app => "/api"   # ApproveLoan → POST /api/approve_loan/v1
 ```
 
 `Axn::OpenAPI.app(tools: nil, context: nil, path_prefix: nil, spec_path: nil)` — `tools:` defaults
 to `Axn::OpenAPI.tools` (`Axn.tools_for(:openapi)`); pass an explicit array to serve a curated
 subset instead of every registered tool. **The mount point is the path prefix** — `mount ... =>
 "/api"` puts every tool under `/api/...` and the spec at `/api/openapi.json`.
+
+Every path is `{mount}{path_prefix}/{tool}/v{n}`, where `n` is the Axn's `tool_version` (undeclared
+⇒ `1`). There is no bare, default, or "latest" path — the newest version is whatever `vN` is
+highest in the served spec's `paths`, not a magic route. Declaring `tool_version N` on a second Axn
+that shares a `tool_name` (set explicitly via `axn_name`, since distinct classes otherwise derive
+distinct names) adds a `/vN` path alongside the existing ones — it never touches or replaces the
+paths already registered for that tool's other versions. A `POST` to a known tool at an
+unregistered version 404s with a message pointing at the latest available version's path.
 
 Or own routing yourself:
 
@@ -90,7 +99,7 @@ bug** (500), not a caller error (400) — the injected context is trusted.
 | --- | --- | --- |
 | `200` | Success | Bare `output_schema` object — no wrapper |
 | `400` | Malformed JSON body, or a caller input-contract violation (`InboundValidationError`) | `{"error": {"message", "field_errors"}}` |
-| `404` | No tool at that path (mount skin only) | `{"error": {"message"}}` |
+| `404` | No tool at that path, **or** a known tool at an unregistered version — message names the latest available version's path (mount skin only) | `{"error": {"message"}}` |
 | `405` | Wrong HTTP verb — every tool route is `POST` (mount skin only) | `{"error": {"message"}}` |
 | `422` | The Axn ran and called `fail!` — a well-formed request the operation refused | `{"error": {"message": "<fail! text, verbatim>"}}` |
 | `500` | Unexpected exception, or `strict_serialization` rejecting an unserializable exposed value | `{"error": {"message": "Internal Server Error"}}` (generic, no leak) |
