@@ -87,3 +87,11 @@
   `spec/openapi_integration_spec.rb` drives both skins over real HTTP via `Rack::Test` (no
   `rspec-rails`/`type: :request` in this dummy app): a mounted tool call, the mounted `/openapi.json`,
   and the controller mixin mapping `fail!` to 422.
+- `[BREAKING]` `Axn::OpenAPI::SpecGenerator#generate` now builds `paths` from `RouteTable.build`
+  instead of one bare `{path_prefix}/{tool_name}` entry per tool: it emits one path per tool
+  *version* (`{path_prefix}/{tool_name}/v{tool_version}`), each keyed by its own `RouteEntry#path`
+  and given a doc-unique `operationId` (`RouteEntry#operation_id`, `{tool_name}_v{tool_version}`)
+  and its own version's `input_schema`/`output_schema`/`description`/`_semantic_hints`. This closes
+  the gap the previous task left open — served routes (`Router`) and the documented OpenAPI paths
+  now always agree, since both are derived from the same `RouteTable`. The old bare-path doc shape
+  (one entry per tool name, latest version only) is gone.

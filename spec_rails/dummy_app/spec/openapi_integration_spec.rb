@@ -17,7 +17,7 @@ RSpec.describe "axn-openapi inside Rails" do
   it "serves the OpenAPI spec via the mount" do
     get "/api/openapi.json"
     expect(last_response.status).to eq(200)
-    expect(JSON.parse(last_response.body)["paths"]).to have_key("/echo_tool")
+    expect(JSON.parse(last_response.body)["paths"]).to have_key("/echo_tool/v1")
   end
 
   it "dispatches via the controller mixin (render_axn), mapping fail! to 422" do

@@ -8,7 +8,7 @@ RSpec.describe "Axn::OpenAPI facade" do
   end
 
   it ".spec generates the document for all registered tools by default" do
-    expect(Axn::OpenAPI.spec["paths"]).to have_key("/echo_tool")
+    expect(Axn::OpenAPI.spec["paths"]).to have_key("/echo_tool/v1")
   end
 
   it ".app builds a mountable Rack app end-to-end" do

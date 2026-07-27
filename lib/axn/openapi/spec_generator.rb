@@ -36,10 +36,11 @@ module Axn
       end
 
       def generate
+        entries = RouteTable.build(tools: @tools, path_prefix: @path_prefix)
         {
           "openapi" => "3.1.0",
           "info" => @info,
-          "paths" => @tools.to_h { |axn| ["#{@path_prefix}/#{axn.tool_name(:openapi)}", path_item(axn)] },
+          "paths" => entries.to_h { |entry| [entry.path, path_item(entry)] },
           "components" => { "schemas" => { "Error" => ERROR_SCHEMA } },
         }
       end
@@ -53,9 +54,10 @@ module Axn
         info
       end
 
-      def path_item(axn)
+      def path_item(entry)
+        axn = entry.axn
         op = {
-          "operationId" => axn.tool_name(:openapi),
+          "operationId" => entry.operation_id,
           "requestBody" => { "required" => true, "content" => { "application/json" => { "schema" => axn.input_schema } } },
           "responses" => {
             "200" => { "description" => "Success", "content" => { "application/json" => { "schema" => axn.output_schema } } },

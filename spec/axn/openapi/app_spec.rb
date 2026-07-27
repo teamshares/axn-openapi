@@ -28,6 +28,6 @@ RSpec.describe Axn::OpenAPI::App do
     app = described_class.new(tools: [EchoTool], path_prefix: "/axns")
     res = Rack::MockRequest.new(app).get("/axns/openapi.json")
     expect(res.status).to eq(200)
-    expect(JSON.parse(res.body)["paths"]).to have_key("/axns/echo_tool")
+    expect(JSON.parse(res.body)["paths"]).to have_key("/axns/echo_tool/v1")
   end
 end
