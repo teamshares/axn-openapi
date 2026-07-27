@@ -31,4 +31,16 @@ RSpec.describe Axn::OpenAPI::Dispatcher do
     d = dispatch(OpaqueTool, {})
     expect(d.status).to eq(500)
   end
+
+  it "returns 500 (no leak) when a successful result exposes a non-JSON-encodable number" do
+    klass = Class.new do
+      include Axn
+
+      exposes :ratio, type: Float
+      def call = expose(ratio: Float::INFINITY)
+    end
+    d = dispatch(klass, {})
+    expect(d.status).to eq(500)
+    expect(d.body).to eq("error" => { "message" => "Internal Server Error" })
+  end
 end

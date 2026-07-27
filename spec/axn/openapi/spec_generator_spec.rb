@@ -43,4 +43,17 @@ RSpec.describe Axn::OpenAPI::SpecGenerator do
     op = doc.dig("paths", "/calc/v1", "post")
     expect(op).not_to have_key("x-axn-semantic-hints")
   end
+
+  it "marks requestBody required when the tool has a required input" do
+    # EchoTool: `expects :message, type: String` (required).
+    required = doc.dig("paths", "/echo_tool/v1", "post", "requestBody", "required")
+    expect(required).to be(true)
+  end
+
+  it "marks requestBody optional for an ambient-context-only tool (empty input schema)" do
+    d = described_class.new(tools: [ContextEchoTool]).generate
+    body = d.dig("paths", "/context_echo_tool/v1", "post", "requestBody")
+    expect(body["required"]).to be(false)
+    expect(body.dig("content", "application/json", "schema")).to eq(ContextEchoTool.input_schema)
+  end
 end

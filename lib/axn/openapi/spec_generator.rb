@@ -56,9 +56,10 @@ module Axn
 
       def path_item(entry)
         axn = entry.axn
+        input_schema = axn.input_schema
         op = {
           "operationId" => entry.operation_id,
-          "requestBody" => { "required" => true, "content" => { "application/json" => { "schema" => axn.input_schema } } },
+          "requestBody" => request_body(input_schema),
           "responses" => {
             "200" => { "description" => "Success", "content" => { "application/json" => { "schema" => axn.output_schema } } },
             "400" => error_response("Invalid request"),
@@ -70,6 +71,17 @@ module Axn
         hints = axn._semantic_hints.map(&:to_s)
         op["x-axn-semantic-hints"] = hints unless hints.empty?
         { "post" => op }
+      end
+
+      # `required` is derived from the contract, not hardcoded true: a tool with no required inbound
+      # fields — an ambient-context-only tool (empty input schema), or one whose inputs are all
+      # optional — accepts a blank body (the router parses a blank body as `{}`), so forcing a body
+      # would make OpenAPI validators and generated clients reject a request that succeeds at runtime.
+      def request_body(input_schema)
+        {
+          "required" => Array(input_schema[:required]).any?,
+          "content" => { "application/json" => { "schema" => input_schema } },
+        }
       end
 
       def error_response(description)

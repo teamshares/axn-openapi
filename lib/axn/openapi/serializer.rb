@@ -26,6 +26,12 @@ module Axn
       # drift): a value is serializable unless it reaches the `value.to_s` branch (no own as_json,
       # no to_h) AND that to_s is the inherited default.
       def assert_serializable!(value, path)
+        # A non-finite number (NaN / ±Infinity) is a SAFE_LEAVES type (Float/Numeric) that
+        # serialize_value passes through untouched, but JSON.generate rejects it — so without this
+        # check it would raise mid-render, AFTER the dispatcher produced a 200, escaping the Rack app
+        # instead of following the documented 500 path. Checked before SAFE_LEAVES so it isn't waved
+        # through. (`finite?` is defined on every Numeric; Integer/Rational are always finite.)
+        raise UnserializableExposureError.new(path, value, reason: "#{value} is not representable in JSON") if value.is_a?(Numeric) && !value.finite?
         return if SAFE_LEAVES.any? { |k| value.is_a?(k) }
         return value.each { |k, v| assert_serializable!(v, "#{path}.#{k}") } if value.is_a?(Hash)
         return value.each_with_index { |v, i| assert_serializable!(v, "#{path}[#{i}]") } if value.is_a?(Array)

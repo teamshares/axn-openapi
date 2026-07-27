@@ -68,4 +68,26 @@ RSpec.describe Axn::OpenAPI::Serializer do
     end
     expect { serialize(klass) }.to raise_error(Axn::OpenAPI::UnserializableExposureError, /wrapped\.inner/)
   end
+
+  it "raises on a non-finite Float (Infinity/NaN) — not JSON-representable — when strict" do
+    [Float::INFINITY, -Float::INFINITY, Float::NAN].each do |bad|
+      klass = Class.new do
+        include Axn
+
+        exposes :ratio, type: Float
+        define_method(:call) { expose(ratio: bad) }
+      end
+      expect { serialize(klass) }.to raise_error(Axn::OpenAPI::UnserializableExposureError, /ratio/)
+    end
+  end
+
+  it "does not raise on a non-finite Float when strict is false (opt-out)" do
+    klass = Class.new do
+      include Axn
+
+      exposes :ratio, type: Float
+      def call = expose(ratio: Float::INFINITY)
+    end
+    expect { serialize(klass, strict: false) }.not_to raise_error
+  end
 end

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- `[BUGFIX]` A successful Axn that exposes a non-finite number (`Float::INFINITY`/`-Infinity`/`NAN`)
+  now maps to the documented generic `500` envelope instead of raising `JSON::GeneratorError`
+  mid-render (which escaped the Rack app after a `200` was decided). The strict serializer now
+  rejects non-finite numbers alongside default-`Object#to_s` values, so both follow the same no-leak
+  500 path; `strict_serialization: false` remains an explicit opt-out.
+- `[BUGFIX]` `SpecGenerator` now derives each operation's `requestBody.required` from the input
+  contract (true only when the Axn has a required inbound field) instead of hardcoding `true`. An
+  ambient-context-only tool (empty input schema) or an all-optional-input tool is now `required:
+  false`, matching the router (which accepts a blank body as `{}`) — so OpenAPI validators and
+  generated clients no longer reject a request that succeeds at runtime.
 - `[FEAT]` `Axn::OpenAPI` (renamed from the scaffolded `Axn::Openapi`) is now `Axn::Configurable` +
   `Axn::Tools::AdapterRoots`, with settings `path_prefix` (`""`), `spec_path` (`"/openapi.json"`),
   `reject_undeclared_inputs` (`false`), `strict_serialization` (`true`), `info_title` (`"Axn API"`),
