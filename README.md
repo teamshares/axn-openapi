@@ -179,8 +179,9 @@ convention `axn-mcp`/`axn-ruby_llm` use:
 - **`tool except: :openapi`** — keeps a directory grant but removes `:openapi`. `tool false` opts
   out of every adapter.
 
-`Axn::OpenAPI.tools` (`Axn.tools_for(:openapi)`) enumerates the current membership — the default
-source for `.app`/`.spec` when you don't pass an explicit `tools:` list.
+`Axn::OpenAPI.tools` (`Axn.tools_for(:openapi, all_versions: true)`) enumerates the current
+membership across every declared version of each tool — the default source for `.app`/`.spec`
+when you don't pass an explicit `tools:` list.
 
 ## Configuration
 

@@ -30,4 +30,12 @@ RSpec.describe Axn::OpenAPI::App do
     expect(res.status).to eq(200)
     expect(JSON.parse(res.body)["paths"]).to have_key("/axns/echo_tool/v1")
   end
+
+  it "serves every version when tools default to the all-versions facade" do
+    allow(Axn::OpenAPI).to receive(:tools).and_return([CalcV1Tool, CalcV2Tool])
+    app = described_class.new # no explicit tools:
+    mock = Rack::MockRequest.new(app)
+    expect(mock.post("/calc/v1", input: '{"n":5}').status).to eq(200)
+    expect(mock.post("/calc/v2", input: '{"n":5}').status).to eq(200)
+  end
 end

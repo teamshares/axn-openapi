@@ -111,3 +111,8 @@
   on a second Axn sharing a `tool_name` (via `axn_name`) adds a `/vN` path without touching any
   existing version's path. Stale example paths (`/approve_loan` → `/approve_loan/v1`) updated
   throughout.
+- `[BUGFIX]` `Axn::OpenAPI::App.new` with no explicit `tools:` now defaults to `Axn::OpenAPI.tools`
+  (all versions of every registered tool) instead of `Axn.tools_for(:openapi)` (latest version
+  only). The old default meant `mount Axn::OpenAPI::App.new => "/api"` silently served only the
+  newest version of any multi-version tool — the exact drift this gem's versioned-URL scheme
+  exists to prevent.

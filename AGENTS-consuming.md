@@ -52,8 +52,8 @@ mount Axn::OpenAPI.app => "/api"   # ApproveLoan → POST /api/approve_loan/v1
 ```
 
 `Axn::OpenAPI.app(tools: nil, context: nil, path_prefix: nil, spec_path: nil)` — `tools:` defaults
-to `Axn::OpenAPI.tools` (`Axn.tools_for(:openapi)`); pass an explicit array to serve a curated
-subset instead of every registered tool. **The mount point is the path prefix** — `mount ... =>
+to `Axn::OpenAPI.tools` (`Axn.tools_for(:openapi, all_versions: true)`, i.e. every version of every
+registered tool); pass an explicit array to serve a curated subset instead. **The mount point is the path prefix** — `mount ... =>
 "/api"` puts every tool under `/api/...` and the spec at `/api/openapi.json`.
 
 Every path is `{mount}{path_prefix}/{tool}/v{n}`, where `n` is the Axn's `tool_version` (undeclared
