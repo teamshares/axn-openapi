@@ -1,5 +1,13 @@
 # axn-openapi
 
+> **⚠️ Status: unreleased proof of concept — not used in production.**
+> This gem exists primarily as a **testbed**: it's the first non-LLM consumer of axn core's tool
+> machinery, built to prove that the core tool/reflection/versioning semantics generalize beyond the
+> MCP/LLM use-cases they were originally designed against. It is **not published, not
+> production-hardened, and not deployed anywhere yet.** Treat the API, URL scheme, and config surface
+> as unstable and subject to change. Use it to experiment and to stress-test axn core — not (yet) to
+> serve real traffic.
+
 Serve [Axn](https://github.com/teamshares/axn) actions as an OpenAPI-described JSON HTTP API. Give
 it a set of Axns; it auto-generates an OpenAPI 3.1 document, routes inbound HTTP requests to the
 right Axn, runs it through axn core's sanctioned tool invoker, and returns JSON.
