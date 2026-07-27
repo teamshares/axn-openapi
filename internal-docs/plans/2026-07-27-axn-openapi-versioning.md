@@ -212,7 +212,9 @@ RSpec.describe Axn::OpenAPI::Router do
   end
 
   it "routes each version to its own Axn" do
-    expect(route("POST", "/calc/v1", body: '{"n":5}').body).to eq("result" => 5)
+    # Shared fixtures (spec/support/versioned_tools.rb): CalcV1Tool exposes :value, CalcV2Tool :doubled
+    # (`result` is a reserved exposure name). Both set their name via `axn_name "calc"`, not `tool_name`.
+    expect(route("POST", "/calc/v1", body: '{"n":5}').body).to eq("value" => 5)
     expect(route("POST", "/calc/v2", body: '{"n":5}').body).to eq("doubled" => 10)
   end
 
@@ -491,11 +493,11 @@ git commit -m "feat: generate one versioned OpenAPI path per tool version from R
 
 ```ruby
   it "serves two coexisting versions of a tool at distinct paths with distinct contracts" do
-    post "/api/greeter/v1", '{"name":"ada"}', "CONTENT_TYPE" => "application/json"
+    post "/api/greeter/v1", '{"subject":"ada"}', "CONTENT_TYPE" => "application/json"
     expect(last_response.status).to eq(200)
     expect(JSON.parse(last_response.body)).to eq("greeting" => "hi ada")
 
-    post "/api/greeter/v2", '{"name":"ada"}', "CONTENT_TYPE" => "application/json"
+    post "/api/greeter/v2", '{"subject":"ada"}', "CONTENT_TYPE" => "application/json"
     expect(last_response.status).to eq(200)
     expect(JSON.parse(last_response.body)).to eq("greeting" => "Hello, ada!")
   end
@@ -519,17 +521,19 @@ Expected: FAIL — no `greeter` tool / no `/api/greeter/*` routes.
 
 - [ ] **Step 3: Add the registered multi-version tool + mount it**
 
+Both greeter versions must resolve to the SAME `tool_name` ("greeter") so they group as one tool. The class names (`GreeterV1`/`GreeterV2`) would otherwise derive distinct names `greeter_v1`/`greeter_v2`, so set the name explicitly with **`axn_name "greeter"`** (NOT `tool_name`, which is a reader). They DO declare `tool :openapi` (registered in the dummy app). Verify the exposure field name against core's reserved-exposure list before finalizing (as Task 1's fixtures had to — `result`/`ok` are reserved); `greeting` is expected to be fine, but confirm and adjust if it raises `ReservedAttributeError`.
+
 `spec_rails/dummy_app/app/agent_tools/greeter_v1.rb`:
 ```ruby
 # frozen_string_literal: true
 class GreeterV1
   include Axn
   tool :openapi
-  tool_name :greeter
+  axn_name "greeter"
   tool_version 1
-  expects :name, type: String
+  expects :subject, type: String
   exposes :greeting, type: String
-  def call = expose(greeting: "hi #{name}")
+  def call = expose(greeting: "hi #{subject}")
 end
 ```
 
@@ -539,11 +543,11 @@ end
 class GreeterV2
   include Axn
   tool :openapi
-  tool_name :greeter
+  axn_name "greeter"
   tool_version 2
-  expects :name, type: String
+  expects :subject, type: String
   exposes :greeting, type: String
-  def call = expose(greeting: "Hello, #{name}!")
+  def call = expose(greeting: "Hello, #{subject}!")
 end
 ```
 
