@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "json"
+
 module Axn
   module OpenAPI
     # The spine. Runs an Axn through the sanctioned Axn::Tools::Invoker and maps the returned
@@ -29,9 +31,17 @@ module Axn
       def success(axn_class, result)
         body = Serializer.serialize(result, axn_class.external_field_configs,
                                     strict: Axn::OpenAPI.config.strict_serialization)
+        # Validate JSON-encodability HERE (the skins re-encode when rendering) so an unencodable
+        # success body maps to the documented generic 500 instead of raising from the skin's renderer
+        # and escaping as the host framework's error. This is the authoritative encodability gate —
+        # it catches what the strict serializer can't/doesn't: a String with invalid UTF-8, and a
+        # non-finite number when strict serialization is disabled. Encoding twice on the success path
+        # buys one transport-agnostic 500 decision. (The strict serializer still runs first, giving a
+        # precise field-level message for garbage `to_s` projections that ARE valid JSON.)
+        JSON.generate(body)
         Dispatch.new(200, body)
-      rescue UnserializableExposureError => e
-        Axn.config.logger.error { "[axn-openapi] #{e.message}" }
+      rescue UnserializableExposureError, JSON::GeneratorError => e
+        Axn.config.logger.error { "[axn-openapi] unencodable success body: #{e.message}" }
         Dispatch.new(500, GENERIC_500)
       end
 

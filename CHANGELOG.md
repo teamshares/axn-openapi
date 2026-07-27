@@ -2,11 +2,16 @@
 
 ## Unreleased
 
-- `[BUGFIX]` A successful Axn that exposes a non-finite number (`Float::INFINITY`/`-Infinity`/`NAN`)
-  now maps to the documented generic `500` envelope instead of raising `JSON::GeneratorError`
-  mid-render (which escaped the Rack app after a `200` was decided). The strict serializer now
-  rejects non-finite numbers alongside default-`Object#to_s` values, so both follow the same no-leak
-  500 path; `strict_serialization: false` remains an explicit opt-out.
+- `[BUGFIX]` A successful Axn whose exposed body isn't JSON-encodable now maps to the documented
+  generic `500` envelope instead of raising `JSON::GeneratorError` mid-render (which escaped the Rack
+  app / host framework after a `200` was already decided). The dispatcher validates JSON-encodability
+  on the success path and routes any failure — a non-finite number (`Float::INFINITY`/`NaN`) or a
+  `String` with invalid UTF-8 — through the same no-leak 500 path. Works regardless of
+  `strict_serialization` (the strict serializer still runs first for a precise field-level message on
+  garbage-but-valid-JSON `to_s` projections).
+- `[BUGFIX]` The strict serializer now validates Hash **keys**, not just values: `serialize_value`
+  stringifies keys via `#to_s`, so a key with only the default `Object#to_s` (which would render as
+  garbage like `"#<User:0x…>"`) is now rejected in strict mode, exactly as such a value is.
 - `[BUGFIX]` `SpecGenerator` now derives each operation's `requestBody.required` from the input
   contract (true only when the Axn has a required inbound field) instead of hardcoding `true`. An
   ambient-context-only tool (empty input schema) or an all-optional-input tool is now `required:

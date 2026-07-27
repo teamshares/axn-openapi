@@ -43,4 +43,16 @@ RSpec.describe Axn::OpenAPI::Dispatcher do
     expect(d.status).to eq(500)
     expect(d.body).to eq("error" => { "message" => "Internal Server Error" })
   end
+
+  it "returns 500 (no leak) when a successful result exposes a string JSON can't encode (invalid UTF-8)" do
+    klass = Class.new do
+      include Axn
+
+      exposes :blob, type: String
+      def call = expose(blob: "\xFF\xFE".b)
+    end
+    d = dispatch(klass, {})
+    expect(d.status).to eq(500)
+    expect(d.body).to eq("error" => { "message" => "Internal Server Error" })
+  end
 end

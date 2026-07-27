@@ -69,25 +69,23 @@ RSpec.describe Axn::OpenAPI::Serializer do
     expect { serialize(klass) }.to raise_error(Axn::OpenAPI::UnserializableExposureError, /wrapped\.inner/)
   end
 
-  it "raises on a non-finite Float (Infinity/NaN) — not JSON-representable — when strict" do
-    [Float::INFINITY, -Float::INFINITY, Float::NAN].each do |bad|
-      klass = Class.new do
-        include Axn
-
-        exposes :ratio, type: Float
-        define_method(:call) { expose(ratio: bad) }
-      end
-      expect { serialize(klass) }.to raise_error(Axn::OpenAPI::UnserializableExposureError, /ratio/)
-    end
-  end
-
-  it "does not raise on a non-finite Float when strict is false (opt-out)" do
+  it "raises when a nested Hash has a key with only the default Object#to_s (strict)" do
     klass = Class.new do
       include Axn
 
-      exposes :ratio, type: Float
-      def call = expose(ratio: Float::INFINITY)
+      exposes :data
+      def call = expose(data: { OpaqueValue.new => "v" })
     end
-    expect { serialize(klass, strict: false) }.not_to raise_error
+    expect { serialize(klass) }.to raise_error(Axn::OpenAPI::UnserializableExposureError, /hash key/i)
+  end
+
+  it "allows a Hash keyed by ordinary scalars (String/Symbol/Integer)" do
+    klass = Class.new do
+      include Axn
+
+      exposes :data
+      def call = expose(data: { :a => 1, "b" => 2, 3 => "c" })
+    end
+    expect { serialize(klass) }.not_to raise_error
   end
 end

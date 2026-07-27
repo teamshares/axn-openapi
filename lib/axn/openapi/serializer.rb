@@ -26,14 +26,8 @@ module Axn
       # drift): a value is serializable unless it reaches the `value.to_s` branch (no own as_json,
       # no to_h) AND that to_s is the inherited default.
       def assert_serializable!(value, path)
-        # A non-finite number (NaN / ±Infinity) is a SAFE_LEAVES type (Float/Numeric) that
-        # serialize_value passes through untouched, but JSON.generate rejects it — so without this
-        # check it would raise mid-render, AFTER the dispatcher produced a 200, escaping the Rack app
-        # instead of following the documented 500 path. Checked before SAFE_LEAVES so it isn't waved
-        # through. (`finite?` is defined on every Numeric; Integer/Rational are always finite.)
-        raise UnserializableExposureError.new(path, value, reason: "#{value} is not representable in JSON") if value.is_a?(Numeric) && !value.finite?
         return if SAFE_LEAVES.any? { |k| value.is_a?(k) }
-        return value.each { |k, v| assert_serializable!(v, "#{path}.#{k}") } if value.is_a?(Hash)
+        return validate_hash!(value, path) if value.is_a?(Hash)
         return value.each_with_index { |v, i| assert_serializable!(v, "#{path}[#{i}]") } if value.is_a?(Array)
         # serialize_value follows as_json (own) or to_h and then RECURSES into the returned
         # structure (values.rb) — so the guard must recurse too, or a nested opaque leaf inside a
@@ -46,6 +40,23 @@ module Axn
         return unless DEFAULT_TO_S_OWNERS.include?(value.method(:to_s).owner)
 
         raise UnserializableExposureError.new(path, value)
+      end
+
+      # serialize_value renders a Hash's KEYS via `transform_keys(&:to_s)` (never the as_json/to_h
+      # value chain), so a key whose only `to_s` is the inherited Object/Kernel default stringifies
+      # to garbage like "#<User:0x…>" exactly as a value would — strict mode must reject it too.
+      # Values still flow through the full chain via assert_serializable!.
+      def validate_hash!(hash, path)
+        hash.each do |key, value|
+          if DEFAULT_TO_S_OWNERS.include?(key.method(:to_s).owner)
+            raise UnserializableExposureError.new(
+              "#{path} (hash key #{key.inspect})", key,
+              reason: "a Hash key serializes via #to_s and this one has only the default Object#to_s " \
+                      "(it would stringify to garbage like \"#<…>\")"
+            )
+          end
+          assert_serializable!(value, "#{path}.#{key}")
+        end
       end
     end
   end
