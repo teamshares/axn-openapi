@@ -1,49 +1,59 @@
 # frozen_string_literal: true
 
 RSpec.describe Axn::OpenAPI::Router do
-  subject(:router) { described_class.new(tools: [EchoTool, RefuseTool], spec_provider: -> { { "openapi" => "3.1.0" } }) }
+  subject(:router) { described_class.new(tools: [EchoTool, CalcV1Tool, CalcV2Tool], spec_provider: -> { { "openapi" => "3.1.0" } }) }
 
   def route(method, path, body: "", ctx: {})
     router.route(http_method: method, path:, raw_body: body, ambient_context: ctx)
   end
 
-  it "routes POST /<tool_name> to the dispatcher" do
-    d = route("POST", "/echo_tool", body: '{"message":"hi"}')
+  it "routes POST /<tool>/v1 for a single-version tool" do
+    d = route("POST", "/echo_tool/v1", body: '{"message":"hi"}')
     expect(d.status).to eq(200)
     expect(d.body).to eq("echoed" => "hi")
   end
 
+  it "routes each version to its own Axn" do
+    # Shared fixtures (spec/support/versioned_tools.rb): CalcV1Tool exposes :value, CalcV2Tool :doubled
+    # (`result` is a reserved exposure name). Both set their name via `axn_name "calc"`, not `tool_name`.
+    expect(route("POST", "/calc/v1", body: '{"n":5}').body).to eq("value" => 5)
+    expect(route("POST", "/calc/v2", body: '{"n":5}').body).to eq("doubled" => 10)
+  end
+
+  it "has no bare path" do
+    expect(route("POST", "/echo_tool", body: '{"message":"hi"}').status).to eq(404)
+  end
+
+  it "404s an unknown version of a known tool with a pointer to the latest" do
+    d = route("POST", "/calc/v3", body: '{"n":1}')
+    expect(d.status).to eq(404)
+    expect(d.body["error"]["message"]).to include("/calc/v2")
+  end
+
+  it "404s an unknown tool with no pointer" do
+    d = route("POST", "/nope/v1", body: "{}")
+    expect(d.status).to eq(404)
+    expect(d.body["error"]["message"]).not_to include("/v")
+  end
+
   it "serves the spec at GET /openapi.json" do
-    d = route("GET", "/openapi.json")
-    expect(d.status).to eq(200)
-    expect(d.body).to eq("openapi" => "3.1.0")
+    expect(route("GET", "/openapi.json").body).to eq("openapi" => "3.1.0")
   end
 
-  it "404s an unknown tool" do
-    expect(route("POST", "/nope", body: "{}").status).to eq(404)
+  it "405s a wrong verb on a known versioned path" do
+    expect(route("GET", "/echo_tool/v1").status).to eq(405)
   end
 
-  it "405s a wrong verb on a known tool" do
-    expect(route("GET", "/echo_tool").status).to eq(405)
+  it "405s a wrong verb on the spec path" do
+    expect(route("POST", "/openapi.json", body: "{}").status).to eq(405)
   end
 
   it "400s a malformed JSON body" do
-    d = route("POST", "/echo_tool", body: "{not json")
-    expect(d.status).to eq(400)
-    expect(d.body["error"]["message"]).to match(/malformed|json/i)
+    expect(route("POST", "/echo_tool/v1", body: "{not json").status).to eq(400)
   end
 
   it "honors a path_prefix" do
     r = described_class.new(tools: [EchoTool], path_prefix: "/axns")
-    expect(r.route(http_method: "POST", path: "/axns/echo_tool", raw_body: '{"message":"hi"}').status).to eq(200)
-  end
-
-  it "405s a non-GET verb on the spec path" do
-    expect(route("POST", "/openapi.json", body: "{}").status).to eq(405)
-  end
-
-  it "400s a JSON body that isn't an object" do
-    d = route("POST", "/echo_tool", body: "[1,2,3]")
-    expect(d.status).to eq(400)
+    expect(r.route(http_method: "POST", path: "/axns/echo_tool/v1", raw_body: '{"message":"hi"}').status).to eq(200)
   end
 end

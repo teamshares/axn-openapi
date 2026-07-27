@@ -13,7 +13,7 @@ RSpec.describe "Axn::OpenAPI facade" do
 
   it ".app builds a mountable Rack app end-to-end" do
     res = Rack::MockRequest.new(Axn::OpenAPI.app(tools: [EchoTool]))
-                           .post("/echo_tool", input: '{"message":"hi"}')
+                           .post("/echo_tool/v1", input: '{"message":"hi"}')
     expect(JSON.parse(res.body)).to eq("echoed" => "hi")
   end
 end

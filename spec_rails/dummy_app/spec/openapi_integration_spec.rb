@@ -9,7 +9,7 @@ RSpec.describe "axn-openapi inside Rails" do
   def app = Rails.application
 
   it "serves a mounted tool over a real request" do
-    post "/api/echo_tool", '{"message":"hi"}', "CONTENT_TYPE" => "application/json"
+    post "/api/echo_tool/v1", '{"message":"hi"}', "CONTENT_TYPE" => "application/json"
     expect(last_response.status).to eq(200)
     expect(JSON.parse(last_response.body)).to eq("echoed" => "hi")
   end

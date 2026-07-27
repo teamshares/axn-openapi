@@ -69,6 +69,17 @@
   all_versions: true)` (every declared version of each tool) instead of the latest-per-tool_name
   view, so a stable HTTP contract can eventually address every version at its own path. This task is
   additive scaffolding — `Router` and `SpecGenerator` don't consume `RouteTable` yet.
+- `[BREAKING]` `Axn::OpenAPI::Router` now builds its dispatch map from `RouteTable` and matches only
+  the full versioned path `{prefix}/{tool_name}/v{tool_version}` — the old bare `{prefix}/{tool_name}`
+  path is gone, so every request (including single-version tools) must address a specific version
+  (e.g. `POST /echo_tool/v1`). A request to a bare or otherwise unmatched path 404s. When the path is
+  shaped like a tool call (`/{name}/v{n}`) and `{name}` is a real tool but `{n}` isn't a version it
+  has, the 404 body points at the latest available version (`"Unknown version for tool 'calc'.
+  Latest available: /calc/v2."`); when `{name}` isn't a known tool at all, the 404 just names it
+  (`"Unknown tool: nope"`) with no version pointer. `Router.new(tools:, path_prefix:, spec_path:,
+  spec_provider:)` and the spec-endpoint/405/400 behavior are unchanged. This is an intentional
+  intermediate state: routes are now versioned, but `SpecGenerator`'s served document still
+  advertises bare tool paths — a follow-up task flips the doc to match.
 - `[INTERNAL]` Rails integration coverage in the `spec_rails/dummy_app`: `EchoTool`/`RefuseTool`
   fixtures under `app/agent_tools/` (Zeitwerk-autoloaded), a `LoansController < ActionController::API`
   exercising `Axn::OpenAPI::Controller#render_axn` with request-derived `ambient_context`, and routes
