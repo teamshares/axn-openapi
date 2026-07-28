@@ -13,8 +13,9 @@ module Axn
       def initialize(tools:, path_prefix: nil, spec_path: nil, spec_provider: nil)
         @path_prefix = (path_prefix || Axn::OpenAPI.config.path_prefix).to_s
         @spec_full = "#{@path_prefix}#{spec_path || Axn::OpenAPI.config.spec_path}"
-        # Called with the request's mount base (SCRIPT_NAME) so the served doc can publish it as its
-        # `servers` base; accepts (and may ignore) that argument.
+        # A one-arg provider is handed the request's mount base (SCRIPT_NAME) so the served doc can
+        # publish it as its `servers` base. A zero-arg provider (the documented `-> { ... }` form) is
+        # still supported — see spec_dispatch's arity check.
         @spec_provider = spec_provider || ->(_script_name) { {} }
 
         entries = RouteTable.build(tools:, path_prefix: @path_prefix)
@@ -43,7 +44,11 @@ module Axn
       def spec_dispatch(http_method, script_name)
         return error(405, "Method not allowed") unless http_method == "GET"
 
-        Dispatch.new(200, @spec_provider.call(script_name))
+        # Honor both provider shapes: a zero-arity `-> { ... }` (the documented form) is called with no
+        # args; anything that takes an argument receives the mount base. Keeps the public
+        # `spec_provider:` contract backward-compatible after adding SCRIPT_NAME threading.
+        doc = @spec_provider.arity.zero? ? @spec_provider.call : @spec_provider.call(script_name)
+        Dispatch.new(200, doc)
       end
 
       # A known tool_name at a non-existent version points at the latest available version;

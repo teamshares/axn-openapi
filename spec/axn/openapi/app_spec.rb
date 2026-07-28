@@ -3,7 +3,7 @@
 require "rack/mock"
 
 RSpec.describe Axn::OpenAPI::App do
-  let(:app) { described_class.new(tools: [EchoTool], spec_provider: ->(_base) { { "openapi" => "3.1.0" } }) }
+  let(:app) { described_class.new(tools: [EchoTool], spec_provider: -> { { "openapi" => "3.1.0" } }) }
   let(:mock) { Rack::MockRequest.new(app) }
 
   it "serves a tool over a real Rack request" do
@@ -59,5 +59,16 @@ RSpec.describe Axn::OpenAPI::App do
     expect(doc["paths"]).to have_key("/at-build/echo_tool/v1")
   ensure
     Axn::OpenAPI.config.path_prefix = original
+  end
+
+  it "snapshots the tools list so mutating the passed array can't split routes from the doc" do
+    tools = [EchoTool]
+    app = described_class.new(tools:) # default provider -> real SpecGenerator over @tools
+    tools.clear # caller mutates their array after construction
+    mock = Rack::MockRequest.new(app)
+
+    expect(mock.post("/echo_tool/v1", input: '{"message":"hi"}').status).to eq(200)
+    doc = JSON.parse(mock.get("/openapi.json").body)
+    expect(doc["paths"]).to have_key("/echo_tool/v1")
   end
 end

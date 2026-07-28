@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 RSpec.describe Axn::OpenAPI::Router do
-  subject(:router) { described_class.new(tools: [EchoTool, CalcV1Tool, CalcV2Tool], spec_provider: ->(_base) { { "openapi" => "3.1.0" } }) }
+  subject(:router) { described_class.new(tools: [EchoTool, CalcV1Tool, CalcV2Tool], spec_provider: -> { { "openapi" => "3.1.0" } }) }
 
   def route(method, path, body: "", ctx: {})
     router.route(http_method: method, path:, raw_body: body, ambient_context: ctx)
@@ -55,5 +55,19 @@ RSpec.describe Axn::OpenAPI::Router do
   it "honors a path_prefix" do
     r = described_class.new(tools: [EchoTool], path_prefix: "/axns")
     expect(r.route(http_method: "POST", path: "/axns/echo_tool/v1", raw_body: '{"message":"hi"}').status).to eq(200)
+  end
+
+  # subject's zero-arg `-> { ... }` provider (exercised by "serves the spec" above) proves the
+  # documented zero-arity form still works after SCRIPT_NAME threading; this covers the one-arg form.
+  it "passes the request's script_name to a one-arg spec provider" do
+    seen = nil
+    provider = lambda do |base|
+      seen = base
+      { "servers" => [{ "url" => base }] }
+    end
+    r = described_class.new(tools: [EchoTool], spec_provider: provider)
+    d = r.route(http_method: "GET", path: "/openapi.json", raw_body: "", script_name: "/api")
+    expect(seen).to eq("/api")
+    expect(d.body).to eq("servers" => [{ "url" => "/api" }])
   end
 end

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `[BUGFIX]` `spec_provider:` supports both a zero-arg `-> { ... }` (the documented form) and a
+  one-arg `->(script_name) { ... }` provider — the router adapts on arity. (Threading `SCRIPT_NAME`
+  to the provider had briefly broken the zero-arg form.)
+- `[BUGFIX]` `Axn::OpenAPI::App` snapshots the `tools:` array at build time (dup + freeze), so a
+  caller mutating that array afterward can't split the router's build-time route table from the
+  default spec provider's per-request regeneration (which would advertise a 404ing route, or hide a
+  working one).
 - `[BUGFIX]` `Axn::OpenAPI::App` resolves the `path_prefix` once at build time and hands the same value
   to both its router and its default spec generator. Previously a default (omitted) prefix was captured
   by the router but re-resolved by the generator per spec request, so mutating

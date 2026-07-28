@@ -8,7 +8,11 @@ module Axn
     # (e.g. current_user), the auth seam the gem offers but does not own.
     class App
       def initialize(tools: nil, context: nil, path_prefix: nil, spec_path: nil, spec_provider: nil)
-        @tools = tools || Axn::OpenAPI.tools
+        # Snapshot the tool list at build time (dup + freeze) so a caller mutating the array they
+        # passed can't split the two consumers: the router builds its route table once here, while the
+        # default spec provider regenerates from @tools per request — a later add/remove would then
+        # advertise a route that 404s (or hide one that works). Both now share this frozen snapshot.
+        @tools = (tools || Axn::OpenAPI.tools).dup.freeze
         @context = context || ->(_env) { {} }
         # Resolve the prefix ONCE and hand the SAME value to both the router and the spec generator.
         # Otherwise a nil (default) prefix is captured by the router at build time but re-resolved by
