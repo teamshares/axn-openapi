@@ -83,10 +83,13 @@ curl http://localhost:3000/api/openapi.json
 # => the OpenAPI 3.1 document
 ```
 
-The document's `paths` are mount-relative — they read `/approve_loan/v1`, not
-`/api/approve_loan/v1` — so client codegen against the spec needs to account for the mount base
-separately. To find the newest version of a tool, read the spec's `paths` and take the highest
-`vN` for that tool — there is no dedicated "latest" endpoint or route.
+The document's `paths` are mount-relative (they read `/approve_loan/v1`, not `/api/approve_loan/v1`),
+but when the app is mounted below the origin root the served document publishes the mount base as its
+`servers` entry (`"servers": [{ "url": "/api" }]`, derived from the request's `SCRIPT_NAME`) — so
+`server.url + path` is the real endpoint and generated clients / interactive tooling target the right
+URL. A root-mounted app omits `servers` (OpenAPI's `/` default already applies). To find the newest
+version of a tool, read the spec's `paths` and take the highest `vN` for that tool — there is no
+dedicated "latest" endpoint or route.
 
 The gem is framework-agnostic — `Axn::OpenAPI.app` is a plain Rack app, so it also `run`s in a bare
 `config.ru` outside Rails entirely.

@@ -56,4 +56,13 @@ RSpec.describe Axn::OpenAPI::SpecGenerator do
     expect(body["required"]).to be(false)
     expect(body.dig("content", "application/json", "schema")).to eq(ContextEchoTool.input_schema)
   end
+
+  it "publishes a servers base when given one (a mounted app's SCRIPT_NAME)" do
+    d = described_class.new(tools: [EchoTool], servers_base: "/api").generate
+    expect(d["servers"]).to eq([{ "url" => "/api" }])
+  end
+
+  it "omits servers for a root mount (blank base)" do
+    expect(doc).not_to have_key("servers")
+  end
 end

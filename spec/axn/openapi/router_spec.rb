@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 RSpec.describe Axn::OpenAPI::Router do
-  subject(:router) { described_class.new(tools: [EchoTool, CalcV1Tool, CalcV2Tool], spec_provider: -> { { "openapi" => "3.1.0" } }) }
+  subject(:router) { described_class.new(tools: [EchoTool, CalcV1Tool, CalcV2Tool], spec_provider: ->(_base) { { "openapi" => "3.1.0" } }) }
 
   def route(method, path, body: "", ctx: {})
     router.route(http_method: method, path:, raw_body: body, ambient_context: ctx)

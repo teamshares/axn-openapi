@@ -10,7 +10,9 @@ module Axn
       def initialize(tools: nil, context: nil, path_prefix: nil, spec_path: nil, spec_provider: nil)
         @tools = tools || Axn::OpenAPI.tools
         @context = context || ->(_env) { {} }
-        provider = spec_provider || -> { SpecGenerator.new(tools: @tools, path_prefix:).generate }
+        # The provider is handed the request's mount base (SCRIPT_NAME) at serve time so the served
+        # doc can publish it as its `servers` base — see Request#script_name / SpecGenerator.
+        provider = spec_provider || ->(base) { SpecGenerator.new(tools: @tools, path_prefix:, servers_base: base).generate }
         @router = Router.new(tools: @tools, path_prefix:, spec_path:, spec_provider: provider)
       end
 
@@ -21,6 +23,7 @@ module Axn
           path: request.path,
           raw_body: request.raw_body,
           ambient_context: @context.call(env),
+          script_name: request.script_name,
         )
         Response.json(dispatch.body, status: dispatch.status).to_rack
       end

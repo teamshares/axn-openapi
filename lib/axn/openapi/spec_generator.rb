@@ -29,20 +29,25 @@ module Axn
         "required" => ["error"],
       }.freeze
 
-      def initialize(tools:, path_prefix: nil, info: nil)
+      def initialize(tools:, path_prefix: nil, info: nil, servers_base: nil)
         @tools = tools
         @path_prefix = (path_prefix || Axn::OpenAPI.config.path_prefix).to_s
         @info = info || default_info
+        @servers_base = servers_base.to_s
       end
 
       def generate
         entries = RouteTable.build(tools: @tools, path_prefix: @path_prefix)
-        {
-          "openapi" => "3.1.0",
-          "info" => @info,
-          "paths" => entries.to_h { |entry| [entry.path, path_item(entry)] },
-          "components" => { "schemas" => { "Error" => ERROR_SCHEMA } },
-        }
+        doc = { "openapi" => "3.1.0", "info" => @info }
+        # The doc's paths are mount-RELATIVE (they carry `path_prefix` but not the Rack mount point).
+        # When the app is mounted below the origin root (e.g. `/api`), Rack strips that mount point
+        # into SCRIPT_NAME, so without a `servers` base OpenAPI defaults the server to `/` and codegen
+        # calls the wrong root-level URL. Publish the mount base as the server when known; omit it for
+        # a root mount ("" → OpenAPI's `/` default is already correct).
+        doc["servers"] = [{ "url" => @servers_base }] unless @servers_base.empty?
+        doc["paths"] = entries.to_h { |entry| [entry.path, path_item(entry)] }
+        doc["components"] = { "schemas" => { "Error" => ERROR_SCHEMA } }
+        doc
       end
 
       private

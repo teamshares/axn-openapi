@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- `[BUGFIX]` The served OpenAPI document now publishes the Rack mount base as a `servers` entry
+  (`[{ "url": "<SCRIPT_NAME>" }]`) when the app is mounted below the origin root. The doc's `paths`
+  are mount-relative, so without this a spec served at `/api/openapi.json` listed `/echo_tool/v1` with
+  no server base and OpenAPI defaulted the server to `/`, sending generated clients / interactive
+  tooling to the wrong root-level URL. Derived per-request from `SCRIPT_NAME`; a root mount omits
+  `servers` (the `/` default is already correct). `SpecGenerator` gained a `servers_base:` argument.
 - `[BUGFIX]` The controller mixin (`render_axn`) now rejects a malformed (or non-object) request body
   with a `400`, instead of silently treating it as `{}` — matching the mount router exactly. Both
   skins now share one body parser (`Dispatcher.parse_body`), so they can't diverge. Previously a tool

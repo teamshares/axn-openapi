@@ -3,7 +3,7 @@
 require "rack/mock"
 
 RSpec.describe Axn::OpenAPI::App do
-  let(:app) { described_class.new(tools: [EchoTool], spec_provider: -> { { "openapi" => "3.1.0" } }) }
+  let(:app) { described_class.new(tools: [EchoTool], spec_provider: ->(_base) { { "openapi" => "3.1.0" } }) }
   let(:mock) { Rack::MockRequest.new(app) }
 
   it "serves a tool over a real Rack request" do
@@ -37,5 +37,13 @@ RSpec.describe Axn::OpenAPI::App do
     mock = Rack::MockRequest.new(app)
     expect(mock.post("/calc/v1", input: '{"n":5}').status).to eq(200)
     expect(mock.post("/calc/v2", input: '{"n":5}').status).to eq(200)
+  end
+
+  it "publishes the Rack mount base (SCRIPT_NAME) as the served spec's servers entry" do
+    app = described_class.new(tools: [EchoTool]) # default provider -> real SpecGenerator
+    res = Rack::MockRequest.new(app).get("/openapi.json", "SCRIPT_NAME" => "/api")
+    doc = JSON.parse(res.body)
+    expect(doc["servers"]).to eq([{ "url" => "/api" }])
+    expect(doc["paths"]).to have_key("/echo_tool/v1")
   end
 end
