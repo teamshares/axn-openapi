@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `[BUGFIX]` When `reject_undeclared_inputs` is enabled, the generated request schemas now set
+  `additionalProperties: false`, so OpenAPI validators / generated clients match the runtime (which
+  400s unknown top-level fields). Left permissive in the default lenient mode.
 - `[BUGFIX]` `405 Method Not Allowed` responses now carry the required `Allow` header — `POST` for a
   tool path, `GET` for the spec endpoint — so clients can discover the supported method. (`Dispatch`
   gained an optional `headers` member to carry it; the Rack app forwards it.)

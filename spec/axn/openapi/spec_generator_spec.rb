@@ -65,4 +65,19 @@ RSpec.describe Axn::OpenAPI::SpecGenerator do
   it "omits servers for a root mount (blank base)" do
     expect(doc).not_to have_key("servers")
   end
+
+  it "tightens the request schema to additionalProperties:false when reject_undeclared_inputs is on" do
+    original = Axn::OpenAPI.config.reject_undeclared_inputs
+    Axn::OpenAPI.config.reject_undeclared_inputs = true
+    schema = described_class.new(tools: [EchoTool]).generate
+                            .dig("paths", "/echo_tool/v1", "post", "requestBody", "content", "application/json", "schema")
+    expect(schema[:additionalProperties]).to be(false)
+  ensure
+    Axn::OpenAPI.config.reject_undeclared_inputs = original
+  end
+
+  it "leaves the request schema permissive by default (lenient — no additionalProperties key)" do
+    schema = doc.dig("paths", "/echo_tool/v1", "post", "requestBody", "content", "application/json", "schema")
+    expect(schema).not_to have_key(:additionalProperties)
+  end
 end

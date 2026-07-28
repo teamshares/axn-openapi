@@ -83,9 +83,16 @@ module Axn
       # optional — accepts a blank body (the router parses a blank body as `{}`), so forcing a body
       # would make OpenAPI validators and generated clients reject a request that succeeds at runtime.
       def request_body(input_schema)
+        schema = input_schema
+        # When the adapter rejects unknown top-level fields at runtime (reject_undeclared_inputs),
+        # reflect that in the published schema — otherwise OpenAPI validators / generated clients
+        # accept or send a payload the mounted API will 400. Core leaves additionalProperties at JSON
+        # Schema's permissive default; tighten it to match. `merge` returns a new Hash (never mutates
+        # the core-owned input_schema). Top-level only — that's the scope of the runtime check.
+        schema = schema.merge(additionalProperties: false) if Axn::OpenAPI.config.reject_undeclared_inputs
         {
           "required" => Array(input_schema[:required]).any?,
-          "content" => { "application/json" => { "schema" => input_schema } },
+          "content" => { "application/json" => { "schema" => schema } },
         }
       end
 
