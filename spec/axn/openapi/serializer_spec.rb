@@ -88,4 +88,26 @@ RSpec.describe Axn::OpenAPI::Serializer do
     end
     expect { serialize(klass) }.not_to raise_error
   end
+
+  # These exercise the guard directly (not through a real Axn.call): a cyclic value exposed by a real
+  # Axn overflows earlier, inside axn core's call logger, before the adapter ever serializes — see the
+  # PR discussion. The guard itself must still reject cycles rather than recurse to SystemStackError.
+  it "rejects a self-referential Array (cycle) instead of recursing to SystemStackError" do
+    a = [1]
+    a << a
+    expect { described_class.assert_serializable!(a, "items") }
+      .to raise_error(Axn::OpenAPI::UnserializableExposureError, /self-referential|cycle/i)
+  end
+
+  it "rejects a self-referential Hash (cycle)" do
+    h = {}
+    h["self"] = h
+    expect { described_class.assert_serializable!(h, "data") }
+      .to raise_error(Axn::OpenAPI::UnserializableExposureError, /self-referential|cycle/i)
+  end
+
+  it "does not false-positive on a shared but acyclic reference (diamond)" do
+    shared = { "x" => 1 }
+    expect { described_class.assert_serializable!({ "a" => shared, "b" => shared }, "data") }.not_to raise_error
+  end
 end

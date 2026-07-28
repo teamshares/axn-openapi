@@ -32,4 +32,18 @@ RSpec.describe Axn::OpenAPI::Controller do
     c.render_axn(RefuseTool)
     expect(c.rendered[:status]).to eq(422)
   end
+
+  it "renders a 400 for a malformed body instead of dispatching {} (matches the mount router)" do
+    # ContextEchoTool has no required inputs, so a silently-emptied body would otherwise 200.
+    c = controller_class.new("{not json")
+    c.render_axn(ContextEchoTool)
+    expect(c.rendered[:status]).to eq(400)
+    expect(c.rendered[:json]).to eq("error" => { "message" => "Malformed JSON request body" })
+  end
+
+  it "renders a 400 for a non-object JSON body" do
+    c = controller_class.new("[1,2,3]")
+    c.render_axn(ContextEchoTool)
+    expect(c.rendered[:status]).to eq(400)
+  end
 end

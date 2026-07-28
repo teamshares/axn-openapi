@@ -68,4 +68,12 @@ RSpec.describe Axn::OpenAPI::Dispatcher do
     expect(d.status).to eq(500)
     expect(d.body).to eq("error" => { "message" => "Internal Server Error" })
   end
+
+  it "maps a SystemStackError during serialization to a generic 500 (not a StandardError)" do
+    # e.g. a self-referential structure recursing past the guard; backstop so it never escapes.
+    allow(Axn::OpenAPI::Serializer).to receive(:serialize).and_raise(SystemStackError)
+    d = dispatch(EchoTool, { "message" => "hi" })
+    expect(d.status).to eq(500)
+    expect(d.body).to eq("error" => { "message" => "Internal Server Error" })
+  end
 end

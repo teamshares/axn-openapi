@@ -132,10 +132,12 @@ end
 post "/loans/:id/approve", to: "loans#approve"
 ```
 
-`render_axn(axn_class, ambient_context: {})` reads `request.raw_post`, parses it as JSON (a blank
-or malformed body dispatches as `{}`, which surfaces downstream as an ordinary 400 if a required
-field is then missing), runs it through `Dispatcher`, and calls `render json:, status:`. The module
-references no Rails constants at load time, so it works with any duck-typed `request`/`render`.
+`render_axn(axn_class, ambient_context: {})` reads `request.raw_post` and parses it through the same
+shared body parser the mount uses, so it behaves identically: a blank body is a bodyless call
+(`{}`), a valid JSON object is the params, and a **malformed body (or a non-object JSON value) renders
+a `400`** — it is not silently dispatched as `{}`. It then runs the Axn through `Dispatcher` and calls
+`render json:, status:`. The module references no Rails constants at load time, so it works with any
+duck-typed `request`/`render`.
 
 ## `ambient_context`: the auth/request-context seam
 

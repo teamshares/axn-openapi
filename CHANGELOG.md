@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- `[BUGFIX]` The controller mixin (`render_axn`) now rejects a malformed (or non-object) request body
+  with a `400`, instead of silently treating it as `{}` — matching the mount router exactly. Both
+  skins now share one body parser (`Dispatcher.parse_body`), so they can't diverge. Previously a tool
+  with no required inputs would run and return `200` on garbage input via the controller.
+- `[BUGFIX]` Hardened the serialization path against self-referential (cyclic) Array/Hash values: the
+  strict serializer detects cycles via ancestor-chain tracking (no false positive on shared-but-acyclic
+  references) and rejects them rather than recursing to `SystemStackError`, and the dispatcher's success
+  boundary now also catches `SystemStackError` (which is not a `StandardError`) as a backstop → generic
+  `500`. (Note: a cyclic value exposed by a real Axn currently overflows earlier, inside axn core's
+  call logger during `.call`; fully preventing that is a core-side fix, tracked separately.)
 - `[BUGFIX]` A successful Axn whose result can't be serialized/encoded now maps to the documented
   generic `500` envelope instead of raising mid-render (which escaped the Rack app / host framework
   after a `200` was already decided). The dispatcher's success path is a render boundary that routes

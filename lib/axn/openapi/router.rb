@@ -1,16 +1,11 @@
 # frozen_string_literal: true
 
-require "json"
-
 module Axn
   module OpenAPI
     # Maps (method, path) to a Dispatch for the mount skin. Every tool version has an exact path
     # ({prefix}/{tool}/v{n}) from the shared RouteTable; there is no bare/default/latest path. Owns
     # the pre-dispatch HTTP-layer cases (404 incl. a latest-version pointer / 405 / 400-parse).
     class Router
-      PARSE_ERROR = Object.new.freeze
-      private_constant :PARSE_ERROR
-
       # A path shaped like a tool call, so an unmatched request can be told apart from noise and its
       # tool_name recovered for the 404 latest-version pointer.
       TOOL_PATH = %r{\A/(?<name>[a-z0-9_]+)/v\d+\z}
@@ -33,8 +28,10 @@ module Axn
         return not_found(path) unless axn
         return error(405, "Method not allowed") unless http_method == "POST"
 
-        params = parse_json(raw_body)
-        return error(400, "Malformed JSON request body") if params.equal?(PARSE_ERROR)
+        # Shared parser (Dispatcher.parse_body) so the mount and controller skins can't diverge on
+        # what counts as malformed: nil => malformed/non-object body => the shared 400 envelope.
+        params = Dispatcher.parse_body(raw_body)
+        return Dispatcher.malformed_body_dispatch if params.nil?
 
         Dispatcher.call(axn_class: axn, params:, ambient_context:)
       end
@@ -60,15 +57,6 @@ module Axn
         return error(404, "Unknown tool: #{match[:name]}") unless latest
 
         error(404, "Unknown version for tool '#{match[:name]}'. Latest available: #{latest.path}.")
-      end
-
-      def parse_json(raw_body)
-        return {} if raw_body.nil? || raw_body.strip.empty?
-
-        parsed = JSON.parse(raw_body)
-        parsed.is_a?(Hash) ? parsed : PARSE_ERROR
-      rescue JSON::ParserError
-        PARSE_ERROR
       end
 
       def error(status, message) = Dispatch.new(status, { "error" => { "message" => message } })
