@@ -19,7 +19,12 @@ module Axn
       # string), -> `nil` — the caller renders `malformed_body_dispatch` (400). `nil` is unambiguous:
       # every accepted body parses to a Hash.
       def parse_body(raw_body)
-        body = raw_body.to_s
+        # JSON must be UTF-8 (RFC 8259). A body with invalid UTF-8 bytes is malformed — reject it
+        # here (→ 400) so a bad key like `{"\xFF":1}` can't blow up later in key symbolization, which
+        # happens before a Dispatch exists and so escapes the render-boundary encode gate. Check on a
+        # UTF-8 view of the bytes (Rack input arrives ASCII-8BIT, where every byte is "valid").
+        body = raw_body.to_s.dup.force_encoding(Encoding::UTF_8)
+        return nil unless body.valid_encoding?
         return {} if body.strip.empty?
 
         parsed = JSON.parse(body)

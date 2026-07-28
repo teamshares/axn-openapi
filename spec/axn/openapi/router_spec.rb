@@ -63,6 +63,10 @@ RSpec.describe Axn::OpenAPI::Router do
     expect(route("POST", "/echo_tool/v1", body: "{not json").status).to eq(400)
   end
 
+  it "400s a body with invalid UTF-8 (bad key can't reach symbolization)" do
+    expect(route("POST", "/echo_tool/v1", body: "{\"\xFF\":1}").status).to eq(400)
+  end
+
   it "honors a path_prefix" do
     r = described_class.new(tools: [EchoTool], path_prefix: "/axns")
     expect(r.route(http_method: "POST", path: "/axns/echo_tool/v1", raw_body: '{"message":"hi"}').status).to eq(200)

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `[BUGFIX]` A request body with invalid UTF-8 is now rejected as a malformed-body `400` (JSON must be
+  UTF-8 per RFC 8259). Previously a bad object key (e.g. `{"\xFF":1}`) survived parsing and blew up in
+  key symbolization — before any `Dispatch` existed, so it escaped the render-boundary encode gate.
 - `[BUGFIX]` The JSON-encodability gate now runs at each skin's render boundary, so it covers EVERY
   response body — the mount router's 404s (which are request-path-derived) and the generated spec
   document included, not just `Dispatcher.call`'s. An unencodable body (e.g. invalid UTF-8 from a
