@@ -2,11 +2,13 @@
 
 module Axn
   module OpenAPI
-    # Raised (in strict mode) when an exposed value has no JSON representation — either it serializes
-    # only via the inherited Object/Kernel #to_s (e.g. "#<User:0x…>"), or it's a non-finite number
-    # (NaN/Infinity) that JSON.generate rejects. The Dispatcher maps it to 500: shipping either to an
-    # API consumer is a contract bug in the same family as an OutboundValidationError, and catching it
-    # here keeps such results on the documented no-leak 500 path instead of raising mid-render.
+    # Raised by the strict serializer when an exposed value or Hash key has no meaningful JSON
+    # representation: it (or a key) serializes only via the inherited Object/Kernel #to_s (e.g.
+    # "#<User:0x…>"), two keys collapse to the same stringified property, or a container is
+    # self-referential. The Dispatcher maps it to a generic 500 with a precise, logged #reason —
+    # shipping such a body to an API consumer is a contract bug in the OutboundValidationError family.
+    # (Note: pure ENCODE failures — non-finite numbers, invalid UTF-8 — are NOT this error; they pass
+    # the strict walk and are caught later by Dispatcher.ensure_encodable as a generic 500.)
     # #field_path names the offending exposure; #reason is the specific defect.
     class UnserializableExposureError < Error
       DEFAULT_REASON = "it serializes only via the default Object#to_s — declare it `type: String` " \

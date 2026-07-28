@@ -19,6 +19,9 @@ module Axn
         # Render boundary: guarantee the body is JSON-encodable before the renderer touches it, so an
         # unencodable value maps to the documented generic 500 rather than raising in `render json:`.
         dispatch = Dispatcher.ensure_encodable(dispatch)
+        # No `dispatch.headers` to forward here: every dispatch this path can produce (Dispatcher.call,
+        # malformed_body_dispatch) carries none — the only headered response is the Router's 405+Allow,
+        # which is mount-only. If a headered dispatch ever reaches here, forward it via response.headers.
         render json: dispatch.body, status: dispatch.status
       end
     end
