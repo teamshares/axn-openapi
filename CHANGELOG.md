@@ -18,14 +18,15 @@
   boundary now also catches `SystemStackError` (which is not a `StandardError`) as a backstop → generic
   `500`. (Note: a cyclic value exposed by a real Axn currently overflows earlier, inside axn core's
   call logger during `.call`; fully preventing that is a core-side fix, tracked separately.)
-- `[BUGFIX]` A successful Axn whose result can't be serialized/encoded now maps to the documented
-  generic `500` envelope instead of raising mid-render (which escaped the Rack app / host framework
-  after a `200` was already decided). The dispatcher's success path is a render boundary that routes
-  every such failure through the same no-leak 500: a non-finite number (`Float::INFINITY`/`NaN`), a
-  `String` with invalid UTF-8 (both caught by a `JSON.generate` encodability check), and an arbitrary
-  exception raised by a value's own `as_json`/`to_h` projection. Works regardless of
+- `[BUGFIX]` Every Axn-derived response body — success exposures **and** the `fail!`/validation
+  envelopes — now passes a single JSON-encodability gate in the dispatcher before it's returned, so
+  an unencodable body (a non-finite number, or a `String` with invalid UTF-8 such as a `fail!` message
+  carrying binary data from an upstream service) maps to the documented generic `500` instead of
+  raising mid-render and escaping the Rack app / host framework. Previously only the success body was
+  guarded; a bad `fail!`/validation message would have raised. Works regardless of
   `strict_serialization` (the strict serializer still runs first for a precise field-level message on
-  garbage-but-valid-JSON `to_s` projections).
+  garbage-but-valid-JSON `to_s` projections); exceptions raised *during* serialization (projection
+  errors, cycles → `SystemStackError`) are still caught too.
 - `[BUGFIX]` The strict serializer now validates Hash **keys**, not just values: `serialize_value`
   stringifies keys via `#to_s`, so a key with only the default `Object#to_s` (which would render as
   garbage like `"#<User:0x…>"`) is now rejected in strict mode, exactly as such a value is.

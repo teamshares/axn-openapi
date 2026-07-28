@@ -76,4 +76,22 @@ RSpec.describe Axn::OpenAPI::Dispatcher do
     expect(d.status).to eq(500)
     expect(d.body).to eq("error" => { "message" => "Internal Server Error" })
   end
+
+  it "maps any non-encodable body (including a failure/validation envelope) to a generic 500" do
+    bad = Axn::OpenAPI::Dispatch.new(422, { "error" => { "message" => "bad: \xFF\xFE".b } })
+    result = described_class.ensure_encodable(bad)
+    expect(result.status).to eq(500)
+    expect(result.body).to eq("error" => { "message" => "Internal Server Error" })
+  end
+
+  it "returns 500 (no leak) when a fail! message isn't JSON-encodable (invalid UTF-8)" do
+    klass = Class.new do
+      include Axn
+
+      def call = fail!("bad: \xFF\xFE".b)
+    end
+    d = dispatch(klass, {})
+    expect(d.status).to eq(500)
+    expect(d.body).to eq("error" => { "message" => "Internal Server Error" })
+  end
 end

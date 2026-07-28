@@ -41,35 +41,46 @@ module Axn
         # (axn reads nested subfields by key from a Hash source regardless of key type).
         result = invoker.call(axn_class, symbolize_top(params), ambient_context:)
 
-        return success(axn_class, result) if result.ok?
-        return validation_error(result) if Axn::Tools::Invoker.input_invalid?(result)   # 400
-        return failure(result) if result.outcome.failure?                               # 422
+        dispatch =
+          if result.ok?
+            success(axn_class, result)                                      # 200
+          elsif Axn::Tools::Invoker.input_invalid?(result)
+            validation_error(result)                                        # 400
+          elsif result.outcome.failure?
+            failure(result)                                                 # 422
+          else
+            Dispatch.new(500, GENERIC_500)                                  # already paged on_exception
+          end
 
-        Dispatch.new(500, GENERIC_500) # already paged on_exception
+        ensure_encodable(dispatch)
+      end
+
+      # The single JSON-encodability gate for EVERY Axn-derived body — success exposures AND the
+      # failure/validation messages, which all carry attacker-or-upstream-influenced strings (e.g. a
+      # `fail!` message or validation text containing invalid UTF-8). The skins re-encode when
+      # rendering, so validating here means an unencodable body maps to the documented generic 500
+      # instead of raising mid-render and escaping the Rack app / controller. SystemStackError is
+      # named explicitly (a cyclic body recurses past StandardError). Double-encoding a response is
+      # the accepted cost of one transport-agnostic, no-leak decision. (The 500 body is trivially
+      # encodable, so a body that's already 500 passes straight through.)
+      def ensure_encodable(dispatch)
+        JSON.generate(dispatch.body)
+        dispatch
+      rescue StandardError, SystemStackError => e
+        Axn.config.logger.error { "[axn-openapi] response body not JSON-encodable (was #{dispatch.status}): #{e.class}: #{e.message}" }
+        Dispatch.new(500, GENERIC_500)
       end
 
       def success(axn_class, result)
         body = Serializer.serialize(result, axn_class.external_field_configs,
                                     strict: Axn::OpenAPI.config.strict_serialization)
-        # Validate JSON-encodability HERE (the skins re-encode when rendering) so an unencodable
-        # success body maps to the documented generic 500 instead of raising from the skin's renderer
-        # and escaping as the host framework's error. This is the authoritative encodability gate —
-        # it catches what the strict serializer can't/doesn't: a String with invalid UTF-8, and a
-        # non-finite number when strict serialization is disabled. Encoding twice on the success path
-        # buys one transport-agnostic 500 decision. (The strict serializer still runs first, giving a
-        # precise field-level message for garbage `to_s` projections that ARE valid JSON.)
-        JSON.generate(body)
         Dispatch.new(200, body)
       rescue StandardError, SystemStackError => e
-        # A successful Axn whose result can't be serialized/encoded is a server-side problem, not a
-        # 200: an unrepresentable value (UnserializableExposureError), a JSON encode failure
-        # (JSON::GeneratorError), an arbitrary exception from a value's own as_json/to_h projection,
-        # or a self-referential container that recurses to SystemStackError. The strict serializer
-        # rejects cycles up front (see Serializer), but strict mode can be disabled, and SystemStackError
-        # is NOT a StandardError — so it's named explicitly here. This is the render boundary: none of
-        # these may escape the Rack app / controller renderer, so all map to the documented generic 500
-        # (logged for the operator, nothing leaked). Scoped tight: only serialization + JSON.generate
-        # run above.
+        # Serialization itself failed (before we could build a body): an unrepresentable value
+        # (UnserializableExposureError), an exception from a value's own as_json/to_h projection, or a
+        # self-referential container recursing to SystemStackError (not a StandardError, so named).
+        # A server-side problem, not a 200 → generic 500. (Pure encode failures are caught centrally
+        # by ensure_encodable; this rescue is for exceptions raised DURING serialize_exposed.)
         Axn.config.logger.error { "[axn-openapi] failed to serialize successful result: #{e.class}: #{e.message}" }
         Dispatch.new(500, GENERIC_500)
       end
