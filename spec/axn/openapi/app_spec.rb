@@ -46,4 +46,18 @@ RSpec.describe Axn::OpenAPI::App do
     expect(doc["servers"]).to eq([{ "url" => "/api" }])
     expect(doc["paths"]).to have_key("/echo_tool/v1")
   end
+
+  it "captures the default path_prefix once so routing and the served doc can't split on a later config change" do
+    original = Axn::OpenAPI.config.path_prefix
+    Axn::OpenAPI.config.path_prefix = "/at-build"
+    app = described_class.new(tools: [EchoTool]) # default prefix + default provider
+    Axn::OpenAPI.config.path_prefix = "/changed-after"
+    mock = Rack::MockRequest.new(app)
+
+    expect(mock.post("/at-build/echo_tool/v1", input: '{"message":"hi"}').status).to eq(200)
+    doc = JSON.parse(mock.get("/at-build/openapi.json").body)
+    expect(doc["paths"]).to have_key("/at-build/echo_tool/v1")
+  ensure
+    Axn::OpenAPI.config.path_prefix = original
+  end
 end

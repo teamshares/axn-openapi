@@ -10,10 +10,15 @@ module Axn
       def initialize(tools: nil, context: nil, path_prefix: nil, spec_path: nil, spec_provider: nil)
         @tools = tools || Axn::OpenAPI.tools
         @context = context || ->(_env) { {} }
+        # Resolve the prefix ONCE and hand the SAME value to both the router and the spec generator.
+        # Otherwise a nil (default) prefix is captured by the router at build time but re-resolved by
+        # the generator on each spec request — so a later change to `Axn::OpenAPI.config.path_prefix`
+        # (e.g. while building several differently-configured apps) would split routing from the doc.
+        resolved_prefix = (path_prefix || Axn::OpenAPI.config.path_prefix).to_s
         # The provider is handed the request's mount base (SCRIPT_NAME) at serve time so the served
         # doc can publish it as its `servers` base — see Request#script_name / SpecGenerator.
-        provider = spec_provider || ->(base) { SpecGenerator.new(tools: @tools, path_prefix:, servers_base: base).generate }
-        @router = Router.new(tools: @tools, path_prefix:, spec_path:, spec_provider: provider)
+        provider = spec_provider || ->(base) { SpecGenerator.new(tools: @tools, path_prefix: resolved_prefix, servers_base: base).generate }
+        @router = Router.new(tools: @tools, path_prefix: resolved_prefix, spec_path:, spec_provider: provider)
       end
 
       def call(env)

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- `[BUGFIX]` `Axn::OpenAPI::App` resolves the `path_prefix` once at build time and hands the same value
+  to both its router and its default spec generator. Previously a default (omitted) prefix was captured
+  by the router but re-resolved by the generator per spec request, so mutating
+  `Axn::OpenAPI.config.path_prefix` after an app was built could make it route at the old prefix while
+  its served OpenAPI document advertised the new one.
 - `[BUGFIX]` The served OpenAPI document now publishes the Rack mount base as a `servers` entry
   (`[{ "url": "<SCRIPT_NAME>" }]`) when the app is mounted below the origin root. The doc's `paths`
   are mount-relative, so without this a spec served at `/api/openapi.json` listed `/echo_tool/v1` with
