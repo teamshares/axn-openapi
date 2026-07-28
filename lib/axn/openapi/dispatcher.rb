@@ -41,28 +41,24 @@ module Axn
         # (axn reads nested subfields by key from a Hash source regardless of key type).
         result = invoker.call(axn_class, symbolize_top(params), ambient_context:)
 
-        dispatch =
-          if result.ok?
-            success(axn_class, result)                                      # 200
-          elsif Axn::Tools::Invoker.input_invalid?(result)
-            validation_error(result)                                        # 400
-          elsif result.outcome.failure?
-            failure(result)                                                 # 422
-          else
-            Dispatch.new(500, GENERIC_500)                                  # already paged on_exception
-          end
-
-        ensure_encodable(dispatch)
+        if result.ok?
+          success(axn_class, result)                                        # 200
+        elsif Axn::Tools::Invoker.input_invalid?(result)
+          validation_error(result)                                          # 400
+        elsif result.outcome.failure?
+          failure(result)                                                   # 422
+        else
+          Dispatch.new(500, GENERIC_500)                                    # already paged on_exception
+        end
       end
 
-      # The single JSON-encodability gate for EVERY Axn-derived body — success exposures AND the
-      # failure/validation messages, which all carry attacker-or-upstream-influenced strings (e.g. a
-      # `fail!` message or validation text containing invalid UTF-8). The skins re-encode when
-      # rendering, so validating here means an unencodable body maps to the documented generic 500
-      # instead of raising mid-render and escaping the Rack app / controller. SystemStackError is
-      # named explicitly (a cyclic body recurses past StandardError). Double-encoding a response is
-      # the accepted cost of one transport-agnostic, no-leak decision. (The 500 body is trivially
-      # encodable, so a body that's already 500 passes straight through.)
+      # The JSON-encodability gate applied at the RENDER BOUNDARY (each skin calls this on the final
+      # dispatch before rendering). Covers EVERY body a skin can render — a tool result's exposures or
+      # `fail!`/validation message, a router 404 that echoes request-derived text, or a generated spec
+      # doc — all of which may carry attacker- or upstream-influenced strings (e.g. invalid UTF-8). An
+      # unencodable body maps to the documented generic 500 instead of raising mid-render and escaping
+      # the Rack app / controller. `SystemStackError` is named explicitly (a cyclic body recurses past
+      # StandardError). The 500 body is trivially encodable, so an already-500 dispatch passes through.
       def ensure_encodable(dispatch)
         JSON.generate(dispatch.body)
         dispatch

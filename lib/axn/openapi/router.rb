@@ -69,7 +69,9 @@ module Axn
       def not_found(path, script_name)
         rel = @path_prefix.empty? ? path : path.delete_prefix(@path_prefix)
         match = TOOL_PATH.match(rel)
-        return error(404, "Unknown tool for path #{path}") unless match
+        # Don't echo the raw request path — it's request-derived (and possibly not even valid UTF-8),
+        # and echoing it is the kind of untrusted content that shouldn't ride into a response body.
+        return error(404, "Unknown tool") unless match
 
         latest = @latest_by_name[match[:name]]
         return error(404, "Unknown tool: #{match[:name]}") unless latest

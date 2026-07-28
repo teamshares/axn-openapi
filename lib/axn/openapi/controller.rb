@@ -16,6 +16,9 @@ module Axn
                    else
                      Dispatcher.call(axn_class:, params:, ambient_context:)
                    end
+        # Render boundary: guarantee the body is JSON-encodable before the renderer touches it, so an
+        # unencodable value maps to the documented generic 500 rather than raising in `render json:`.
+        dispatch = Dispatcher.ensure_encodable(dispatch)
         render json: dispatch.body, status: dispatch.status
       end
     end

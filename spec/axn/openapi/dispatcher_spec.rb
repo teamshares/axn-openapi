@@ -1,7 +1,9 @@
 # frozen_string_literal: true
 
 RSpec.describe Axn::OpenAPI::Dispatcher do
-  def dispatch(axn, params) = described_class.call(axn_class: axn, params:)
+  # Mirror the skins' render boundary: Dispatcher.call builds the dispatch; ensure_encodable is the
+  # JSON-encodability gate the App/Controller apply before rendering (so encode-failure cases 500).
+  def dispatch(axn, params) = described_class.ensure_encodable(described_class.call(axn_class: axn, params:))
 
   it "returns 200 with the bare output body on success" do
     d = dispatch(EchoTool, { "message" => "hi" })

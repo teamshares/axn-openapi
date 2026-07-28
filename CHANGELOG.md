@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- `[BUGFIX]` The JSON-encodability gate now runs at each skin's render boundary, so it covers EVERY
+  response body — the mount router's 404s (which are request-path-derived) and the generated spec
+  document included, not just `Dispatcher.call`'s. An unencodable body (e.g. invalid UTF-8 from a
+  request path) maps to the generic 500 instead of raising out of the renderer. Relatedly, the 404
+  "unknown tool" body no longer echoes the raw request path (untrusted, possibly invalid-UTF-8 input).
 - `[BUGFIX]` Strict serialization now rejects a Hash with two distinct keys that stringify to the same
   JSON property (e.g. `{ id: 1, "id" => 2 }`) — core stringifies keys and would silently collapse
   them, dropping a value; better a 500 than a 200 that lost data.

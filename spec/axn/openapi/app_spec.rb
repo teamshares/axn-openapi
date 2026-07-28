@@ -87,4 +87,12 @@ RSpec.describe Axn::OpenAPI::App do
     expect(mock.post("/mut/echo_tool/v1", input: '{"message":"hi"}').status).to eq(200)
     expect(JSON.parse(mock.get("/mut/openapi.json").body)["paths"]).to have_key("/mut/echo_tool/v1")
   end
+
+  it "gates non-encodable non-Dispatcher bodies (e.g. a bad spec doc) at the render boundary → 500" do
+    bad_provider = ->(_base) { { "x" => "bad: \xFF\xFE".b } }
+    app = described_class.new(tools: [EchoTool], spec_provider: bad_provider)
+    res = Rack::MockRequest.new(app).get("/openapi.json")
+    expect(res.status).to eq(500)
+    expect(JSON.parse(res.body)).to eq("error" => { "message" => "Internal Server Error" })
+  end
 end

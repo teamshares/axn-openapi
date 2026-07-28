@@ -20,8 +20,10 @@ RSpec.describe Axn::OpenAPI::Router do
     expect(route("POST", "/calc/v2", body: '{"n":5}').body).to eq("doubled" => 10)
   end
 
-  it "has no bare path" do
-    expect(route("POST", "/echo_tool", body: '{"message":"hi"}').status).to eq(404)
+  it "has no bare path, and 404s without echoing the raw request path" do
+    d = route("POST", "/echo_tool", body: '{"message":"hi"}')
+    expect(d.status).to eq(404)
+    expect(d.body).to eq("error" => { "message" => "Unknown tool" })
   end
 
   it "404s an unknown version of a known tool with a pointer to the latest" do
