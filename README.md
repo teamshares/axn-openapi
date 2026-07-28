@@ -142,6 +142,32 @@ a `400`** — it is not silently dispatched as `{}`. It then runs the Axn throug
 `render json:, status:`. The module references no Rails constants at load time, so it works with any
 duck-typed `request`/`render`.
 
+#### Routing: mount vs. controller (and a recommendation)
+
+The two skins differ in **who owns the URL**. The mount owns its routes, so it auto-generates the
+versioned scheme `{mount}{path_prefix}/{tool}/v{n}` (as described above). The controller skin does
+**not** touch your routes: `render_axn` dispatches whatever Axn you hand it at whatever path *you*
+declare in `config/routes.rb`. That's deliberate — the controller skin exists for consumers who want
+their own routing/auth/filters — so nothing injects `/v1` into a controller route for you.
+
+**Recommendation: bake the version segment into your controller routes from day one** to match the
+mount's convention:
+
+```ruby
+# Prefer this — versioned from the start:
+post "/loans/approve/v1", to: "loans#approve"   # -> render_axn(ApproveLoan::V1) (or the v1 class)
+
+# ...rather than a bare:
+post "/loans/approve",    to: "loans#approve"
+```
+
+Rationale: a versioned path makes a future breaking change **additive** — you add `POST .../v2`
+routed to the v2 Axn, and existing `/v1` clients are untouched — whereas a bare route forces you to
+either break its contract in place or bolt on versioning later (a migration for every caller). It
+also keeps your hand-rolled surface consistent with the mount's `/{tool}/v{n}` scheme, so the whole
+API reads one way. (The gem can't do this for you here — it doesn't own controller routes — but the
+convention is the same one the mount enforces automatically.)
+
 ## `ambient_context`: the auth/request-context seam
 
 Axns don't know about HTTP, sessions, or `current_user` — those are request-scoped, and a plain
