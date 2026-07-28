@@ -13,6 +13,12 @@ RSpec.describe Axn::OpenAPI::App do
     expect(res.headers["content-type"]).to eq("application/json")
   end
 
+  it "returns 405 with an Allow header for a wrong verb on a tool path" do
+    res = mock.get("/echo_tool/v1")
+    expect(res.status).to eq(405)
+    expect(res.headers["allow"]).to eq("POST")
+  end
+
   it "serves the spec" do
     res = mock.get("/openapi.json")
     expect(JSON.parse(res.body)).to eq("openapi" => "3.1.0")

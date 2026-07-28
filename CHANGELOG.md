@@ -2,9 +2,13 @@
 
 ## Unreleased
 
+- `[BUGFIX]` `405 Method Not Allowed` responses now carry the required `Allow` header — `POST` for a
+  tool path, `GET` for the spec endpoint — so clients can discover the supported method. (`Dispatch`
+  gained an optional `headers` member to carry it; the Rack app forwards it.)
 - `[BUGFIX]` `spec_provider:` supports both a zero-arg `-> { ... }` (the documented form) and a
-  one-arg `->(script_name) { ... }` provider — the router adapts on arity. (Threading `SCRIPT_NAME`
-  to the provider had briefly broken the zero-arg form.)
+  one-arg `->(script_name) { ... }` provider — the router adapts on arity, reading it correctly for
+  Procs/lambdas/Methods AND plain callable objects (`def call`). (Threading `SCRIPT_NAME` to the
+  provider had briefly broken the zero-arg form.)
 - `[BUGFIX]` `Axn::OpenAPI::App` snapshots the `tools:` array at build time (dup + freeze), so a
   caller mutating that array afterward can't split the router's build-time route table from the
   default spec provider's per-request regeneration (which would advertise a 404ing route, or hide a

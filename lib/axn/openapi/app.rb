@@ -34,7 +34,7 @@ module Axn
           ambient_context: @context.call(env),
           script_name: request.script_name,
         )
-        Response.json(dispatch.body, status: dispatch.status).to_rack
+        Response.json(dispatch.body, status: dispatch.status, headers: dispatch.headers).to_rack
       end
     end
   end

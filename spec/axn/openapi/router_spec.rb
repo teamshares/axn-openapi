@@ -40,12 +40,16 @@ RSpec.describe Axn::OpenAPI::Router do
     expect(route("GET", "/openapi.json").body).to eq("openapi" => "3.1.0")
   end
 
-  it "405s a wrong verb on a known versioned path" do
-    expect(route("GET", "/echo_tool/v1").status).to eq(405)
+  it "405s a wrong verb on a known versioned path, with Allow: POST" do
+    d = route("GET", "/echo_tool/v1")
+    expect(d.status).to eq(405)
+    expect(d.headers).to eq("allow" => "POST")
   end
 
-  it "405s a wrong verb on the spec path" do
-    expect(route("POST", "/openapi.json", body: "{}").status).to eq(405)
+  it "405s a wrong verb on the spec path, with Allow: GET" do
+    d = route("POST", "/openapi.json", body: "{}")
+    expect(d.status).to eq(405)
+    expect(d.headers).to eq("allow" => "GET")
   end
 
   it "400s a malformed JSON body" do
@@ -68,6 +72,14 @@ RSpec.describe Axn::OpenAPI::Router do
     r = described_class.new(tools: [EchoTool], spec_provider: provider)
     d = r.route(http_method: "GET", path: "/openapi.json", raw_body: "", script_name: "/api")
     expect(seen).to eq("/api")
+    expect(d.body).to eq("servers" => [{ "url" => "/api" }])
+  end
+
+  it "supports a plain callable-object spec provider (def call), reading arity off #call" do
+    provider = Object.new
+    def provider.call(base) = { "servers" => [{ "url" => base }] }
+    r = described_class.new(tools: [EchoTool], spec_provider: provider)
+    d = r.route(http_method: "GET", path: "/openapi.json", raw_body: "", script_name: "/api")
     expect(d.body).to eq("servers" => [{ "url" => "/api" }])
   end
 end

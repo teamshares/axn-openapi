@@ -29,7 +29,7 @@ module Axn
 
         axn = @by_path[path]
         return not_found(path) unless axn
-        return error(405, "Method not allowed") unless http_method == "POST"
+        return error(405, "Method not allowed", allow: "POST") unless http_method == "POST"
 
         # Shared parser (Dispatcher.parse_body) so the mount and controller skins can't diverge on
         # what counts as malformed: nil => malformed/non-object body => the shared 400 envelope.
@@ -42,12 +42,14 @@ module Axn
       private
 
       def spec_dispatch(http_method, script_name)
-        return error(405, "Method not allowed") unless http_method == "GET"
+        return error(405, "Method not allowed", allow: "GET") unless http_method == "GET"
 
         # Honor both provider shapes: a zero-arity `-> { ... }` (the documented form) is called with no
-        # args; anything that takes an argument receives the mount base. Keeps the public
-        # `spec_provider:` contract backward-compatible after adding SCRIPT_NAME threading.
-        doc = @spec_provider.arity.zero? ? @spec_provider.call : @spec_provider.call(script_name)
+        # args; anything taking an argument receives the mount base. A Proc/lambda/Method exposes its
+        # OWN arity directly (reading `method(:call).arity` would wrongly report Proc#call's -1); a
+        # plain callable object (`def call`) doesn't respond to `#arity`, so read it off its #call.
+        callable = @spec_provider.respond_to?(:arity) ? @spec_provider : @spec_provider.method(:call)
+        doc = callable.arity.zero? ? @spec_provider.call : @spec_provider.call(script_name)
         Dispatch.new(200, doc)
       end
 
@@ -66,7 +68,11 @@ module Axn
         error(404, "Unknown version for tool '#{match[:name]}'. Latest available: #{latest.path}.")
       end
 
-      def error(status, message) = Dispatch.new(status, { "error" => { "message" => message } })
+      # `allow:` sets the `Allow` header required on a 405 (the methods the path does support).
+      def error(status, message, allow: nil)
+        headers = allow ? { "allow" => allow } : {}
+        Dispatch.new(status, { "error" => { "message" => message } }, headers)
+      end
     end
   end
 end
