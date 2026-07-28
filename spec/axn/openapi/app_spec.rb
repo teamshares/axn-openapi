@@ -77,4 +77,14 @@ RSpec.describe Axn::OpenAPI::App do
     doc = JSON.parse(mock.get("/openapi.json").body)
     expect(doc["paths"]).to have_key("/echo_tool/v1")
   end
+
+  it "copies the resolved prefix so mutating the source string after build doesn't drift it" do
+    prefix = +"/mut" # a mutable String
+    app = described_class.new(tools: [EchoTool], path_prefix: prefix)
+    prefix << "ated" # caller mutates their string after construction
+    mock = Rack::MockRequest.new(app)
+
+    expect(mock.post("/mut/echo_tool/v1", input: '{"message":"hi"}').status).to eq(200)
+    expect(JSON.parse(mock.get("/mut/openapi.json").body)["paths"]).to have_key("/mut/echo_tool/v1")
+  end
 end

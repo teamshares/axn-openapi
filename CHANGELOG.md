@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `[BUGFIX]` Strict serialization now rejects a Hash with two distinct keys that stringify to the same
+  JSON property (e.g. `{ id: 1, "id" => 2 }`) — core stringifies keys and would silently collapse
+  them, dropping a value; better a 500 than a 200 that lost data.
+- `[BUGFIX]` `Axn::OpenAPI::App` dups + freezes the resolved `path_prefix`, so mutating the source
+  String after construction can't drift the prefix captured by the spec provider away from the
+  router's route map.
+- `[BUGFIX]` The mount router fails loud at construction if `spec_path` collides with a tool route
+  (which would otherwise shadow the tool — GET serving the doc, POST 405ing — while the doc still
+  advertised the tool there).
 - `[BUGFIX]` The 404 "unknown version" pointer now includes the Rack mount base (`SCRIPT_NAME`), so it
   names the real externally-visible URL (e.g. `/api/greeter/v2`) instead of the mount-relative
   `/greeter/v2` (which would 404 at the origin root).

@@ -66,6 +66,11 @@ RSpec.describe Axn::OpenAPI::Router do
     expect(r.route(http_method: "POST", path: "/axns/echo_tool/v1", raw_body: '{"message":"hi"}').status).to eq(200)
   end
 
+  it "fails loud when spec_path collides with a tool route" do
+    expect { described_class.new(tools: [EchoTool], spec_path: "/echo_tool/v1") }
+      .to raise_error(Axn::OpenAPI::Error, /collides/)
+  end
+
   # subject's zero-arg `-> { ... }` provider (exercised by "serves the spec" above) proves the
   # documented zero-arity form still works after SCRIPT_NAME threading; this covers the one-arg form.
   it "passes the request's script_name to a one-arg spec provider" do

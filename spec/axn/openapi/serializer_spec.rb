@@ -89,6 +89,11 @@ RSpec.describe Axn::OpenAPI::Serializer do
     expect { serialize(klass) }.not_to raise_error
   end
 
+  it "rejects a Hash whose keys stringify to the same property (silent-collapse guard, strict)" do
+    expect { described_class.assert_serializable!({ id: 1, "id" => 2 }, "data") }
+      .to raise_error(Axn::OpenAPI::UnserializableExposureError, /stringify to the same|collapse/i)
+  end
+
   # These exercise the guard directly (not through a real Axn.call): a cyclic value exposed by a real
   # Axn overflows earlier, inside axn core's call logger, before the adapter ever serializes — see the
   # PR discussion. The guard itself must still reject cycles rather than recurse to SystemStackError.

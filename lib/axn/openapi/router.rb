@@ -22,6 +22,15 @@ module Axn
         @by_path = entries.to_h { |e| [e.path, e.axn] }
         # tool_name => newest entry, for the 404 pointer. Entries are asc by version, so `last` wins.
         @latest_by_name = entries.to_h { |e| [e.axn.tool_name(:openapi), e] }
+
+        # The spec endpoint is matched before the tool map, so a spec_path equal to a tool route would
+        # silently shadow that tool (GET serves the doc, POST 405s) while the doc still advertises the
+        # tool's POST there. Fail loud at construction rather than ship that contradiction.
+        return unless @by_path.key?(@spec_full)
+
+        raise Axn::OpenAPI::Error,
+              "spec_path #{@spec_full.inspect} collides with the tool route for " \
+              "#{@by_path[@spec_full].tool_name(:openapi).inspect}; configure a non-colliding spec_path"
       end
 
       def route(http_method:, path:, raw_body:, ambient_context: {}, script_name: "")

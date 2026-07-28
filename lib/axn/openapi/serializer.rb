@@ -76,6 +76,7 @@ module Axn
       # to garbage like "#<User:0x…>" exactly as a value would — strict mode must reject it too.
       # Values still flow through the full chain via assert_serializable!.
       def validate_hash!(hash, path, ancestors)
+        stringified = {}
         hash.each do |key, value|
           if DEFAULT_TO_S_OWNERS.include?(key.method(:to_s).owner)
             raise UnserializableExposureError.new(
@@ -84,6 +85,20 @@ module Axn
                       "(it would stringify to garbage like \"#<…>\")"
             )
           end
+
+          # serialize_value stringifies keys via `transform_keys(&:to_s)`, so two distinct keys with
+          # the same string form (e.g. `:id` and `"id"`) collapse into ONE JSON property — silently
+          # dropping a value. Reject it rather than return a 200 that lost data.
+          str = key.to_s
+          if stringified.key?(str)
+            raise UnserializableExposureError.new(
+              "#{path} (hash key #{key.inspect})", key,
+              reason: "two keys stringify to the same JSON property #{str.inspect} " \
+                      "(#{stringified[str].inspect} and #{key.inspect}), which would silently collapse"
+            )
+          end
+          stringified[str] = key
+
           assert_serializable!(value, "#{path}.#{key}", ancestors)
         end
       end

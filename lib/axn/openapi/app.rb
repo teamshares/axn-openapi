@@ -18,7 +18,9 @@ module Axn
         # Otherwise a nil (default) prefix is captured by the router at build time but re-resolved by
         # the generator on each spec request — so a later change to `Axn::OpenAPI.config.path_prefix`
         # (e.g. while building several differently-configured apps) would split routing from the doc.
-        resolved_prefix = (path_prefix || Axn::OpenAPI.config.path_prefix).to_s
+        # dup + freeze so that even a mutable source String mutated after construction can't drift the
+        # captured value (`.to_s` alone returns the same object for a String).
+        resolved_prefix = (path_prefix || Axn::OpenAPI.config.path_prefix).to_s.dup.freeze
         # The provider is handed the request's mount base (SCRIPT_NAME) at serve time so the served
         # doc can publish it as its `servers` base — see Request#script_name / SpecGenerator.
         provider = spec_provider || ->(base) { SpecGenerator.new(tools: @tools, path_prefix: resolved_prefix, servers_base: base).generate }
