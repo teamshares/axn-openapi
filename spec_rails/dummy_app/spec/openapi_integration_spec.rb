@@ -50,7 +50,8 @@ RSpec.describe "axn-openapi inside Rails" do
   it "404s a nonexistent version with a pointer to the latest" do
     post "/api/greeter/v9", "{}", "CONTENT_TYPE" => "application/json"
     expect(last_response.status).to eq(404)
-    expect(JSON.parse(last_response.body)["error"]["message"]).to include("/greeter/v2")
+    # pointer carries the real mounted path (/api/...), not the mount-relative /greeter/v2.
+    expect(JSON.parse(last_response.body)["error"]["message"]).to include("/api/greeter/v2")
   end
 
   it "publishes the mount base (/api) as the served spec's servers entry" do

@@ -28,7 +28,7 @@ module Axn
         return spec_dispatch(http_method, script_name) if path == @spec_full
 
         axn = @by_path[path]
-        return not_found(path) unless axn
+        return not_found(path, script_name) unless axn
         return error(405, "Method not allowed", allow: "POST") unless http_method == "POST"
 
         # Shared parser (Dispatcher.parse_body) so the mount and controller skins can't diverge on
@@ -57,7 +57,7 @@ module Axn
       # anything else is a plain unknown-tool 404. Pointer is error-body only, never a route. Once
       # the path is confirmed tool-shaped, the tool-not-found message names the tool rather than
       # echoing the raw (versioned) path, so it can't be mistaken for a version pointer itself.
-      def not_found(path)
+      def not_found(path, script_name)
         rel = @path_prefix.empty? ? path : path.delete_prefix(@path_prefix)
         match = TOOL_PATH.match(rel)
         return error(404, "Unknown tool for path #{path}") unless match
@@ -65,7 +65,9 @@ module Axn
         latest = @latest_by_name[match[:name]]
         return error(404, "Unknown tool: #{match[:name]}") unless latest
 
-        error(404, "Unknown version for tool '#{match[:name]}'. Latest available: #{latest.path}.")
+        # Prepend the Rack mount base (SCRIPT_NAME) so the pointer is the REAL externally-visible URL
+        # (e.g. /api/greeter/v2), not the mount-relative path (/greeter/v2) that 404s at the origin root.
+        error(404, "Unknown version for tool '#{match[:name]}'. Latest available: #{script_name}#{latest.path}.")
       end
 
       # `allow:` sets the `Allow` header required on a 405 (the methods the path does support).

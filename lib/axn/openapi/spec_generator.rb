@@ -6,29 +6,6 @@ module Axn
     # per tool, requestBody = input_schema, 200 = output_schema, shared Error component for
     # failures, and the semantic hints as an x-axn-semantic-hints vendor extension.
     class SpecGenerator
-      ERROR_REF = { "$ref" => "#/components/schemas/Error" }.freeze
-
-      ERROR_SCHEMA = {
-        "type" => "object",
-        "properties" => {
-          "error" => {
-            "type" => "object",
-            "properties" => {
-              "message" => { "type" => "string" },
-              "field_errors" => {
-                "type" => "array",
-                "items" => {
-                  "type" => "object",
-                  "properties" => { "field" => { "type" => "string" }, "message" => { "type" => "string" } },
-                },
-              },
-            },
-            "required" => ["message"],
-          },
-        },
-        "required" => ["error"],
-      }.freeze
-
       def initialize(tools:, path_prefix: nil, info: nil, servers_base: nil)
         @tools = tools
         @path_prefix = (path_prefix || Axn::OpenAPI.config.path_prefix).to_s
@@ -46,7 +23,7 @@ module Axn
         # a root mount ("" → OpenAPI's `/` default is already correct).
         doc["servers"] = [{ "url" => @servers_base }] unless @servers_base.empty?
         doc["paths"] = entries.to_h { |entry| [entry.path, path_item(entry)] }
-        doc["components"] = { "schemas" => { "Error" => ERROR_SCHEMA } }
+        doc["components"] = { "schemas" => { "Error" => error_schema } }
         doc
       end
 
@@ -97,7 +74,39 @@ module Axn
       end
 
       def error_response(description)
-        { "description" => description, "content" => { "application/json" => { "schema" => ERROR_REF } } }
+        { "description" => description, "content" => { "application/json" => { "schema" => error_ref } } }
+      end
+
+      # Built FRESH per call (not shared frozen constants) so every generated document owns
+      # independent, mutable error structures — a caller customizing one returned doc's error schema
+      # can't contaminate later `.spec` results or already-served app documents through shared nested
+      # hashes. (String values are frozen literals, so they're safely shareable; only the containers
+      # need to be per-document.)
+      def error_ref
+        { "$ref" => "#/components/schemas/Error" }
+      end
+
+      def error_schema
+        {
+          "type" => "object",
+          "properties" => {
+            "error" => {
+              "type" => "object",
+              "properties" => {
+                "message" => { "type" => "string" },
+                "field_errors" => {
+                  "type" => "array",
+                  "items" => {
+                    "type" => "object",
+                    "properties" => { "field" => { "type" => "string" }, "message" => { "type" => "string" } },
+                  },
+                },
+              },
+              "required" => ["message"],
+            },
+          },
+          "required" => ["error"],
+        }
       end
     end
   end

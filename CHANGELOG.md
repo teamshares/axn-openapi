@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- `[BUGFIX]` The 404 "unknown version" pointer now includes the Rack mount base (`SCRIPT_NAME`), so it
+  names the real externally-visible URL (e.g. `/api/greeter/v2`) instead of the mount-relative
+  `/greeter/v2` (which would 404 at the origin root).
+- `[BUGFIX]` Each generated OpenAPI document now gets an independent `Error` component schema (built
+  fresh per `generate`, not a shared shallow-frozen constant), so a caller mutating one returned
+  document can't contaminate later `.spec` results or already-served app documents.
 - `[BUGFIX]` When `reject_undeclared_inputs` is enabled, the generated request schemas now set
   `additionalProperties: false`, so OpenAPI validators / generated clients match the runtime (which
   400s unknown top-level fields). Left permissive in the default lenient mode.

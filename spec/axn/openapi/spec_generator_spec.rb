@@ -80,4 +80,11 @@ RSpec.describe Axn::OpenAPI::SpecGenerator do
     schema = doc.dig("paths", "/echo_tool/v1", "post", "requestBody", "content", "application/json", "schema")
     expect(schema).not_to have_key(:additionalProperties)
   end
+
+  it "gives each generated document an independent Error schema (no shared mutable state)" do
+    d1 = described_class.new(tools: [EchoTool]).generate
+    d2 = described_class.new(tools: [EchoTool]).generate
+    d1.dig("components", "schemas", "Error", "properties")["injected"] = { "type" => "string" }
+    expect(d2.dig("components", "schemas", "Error", "properties")).not_to have_key("injected")
+  end
 end

@@ -30,6 +30,11 @@ RSpec.describe Axn::OpenAPI::Router do
     expect(d.body["error"]["message"]).to include("/calc/v2")
   end
 
+  it "includes the mount base (script_name) in the 404 version pointer" do
+    d = router.route(http_method: "POST", path: "/calc/v3", raw_body: '{"n":1}', script_name: "/api")
+    expect(d.body["error"]["message"]).to include("/api/calc/v2")
+  end
+
   it "404s an unknown tool with no pointer" do
     d = route("POST", "/nope/v1", body: "{}")
     expect(d.status).to eq(404)
