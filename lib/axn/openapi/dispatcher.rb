@@ -109,7 +109,21 @@ module Axn
         # The config pointer lives HERE rather than in the exception message: core raises the same error
         # for adapters that have no such setting, so it must not name this gem's config knob. An
         # operator reads this line, which is the one place that knows both the error and the knob.
-        hint = reject_opaque ? " (if this is an opaque-value rejection, disable with Axn::OpenAPI.config.reject_opaque_exposed_values = false)" : ""
+        #
+        # It names the TOOL and BOTH levels, never just the gem-wide setter. The value is resolved
+        # per-tool, so a `configure(:openapi)` override on this action beats `config` — pointing an
+        # operator at the gem-wide setting would be a dead end whenever the override is what's in
+        # effect (worst case: the gem-wide value is already `false`, so following the advice changes
+        # nothing and the endpoint keeps 500ing). Core exposes no way to ask which level supplied a
+        # resolved value — `resolve_override_for` collapses override and fallback — so the honest hint
+        # describes both and lets the operator look at the one action it names.
+        hint = if reject_opaque
+                 " (if this is an opaque-value rejection: reject_opaque_exposed_values resolved true for " \
+                   "#{axn_class} — unset it on the action via `configure(:openapi)`, or gem-wide via " \
+                   "`Axn::OpenAPI.config.reject_opaque_exposed_values = false`, whichever is set)"
+               else
+                 ""
+               end
         Axn.config.logger.error { "[axn-openapi] failed to serialize successful result: #{e.class}: #{e.message}#{hint}" }
         Dispatch.new(500, GENERIC_500)
       end

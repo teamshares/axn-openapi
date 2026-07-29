@@ -38,6 +38,47 @@ RSpec.describe Axn::OpenAPI::Dispatcher do
   # store rather than straight off the gem-wide config — matching axn-mcp, where the same knob is
   # settable per tool. Both directions are pinned: a tool serving a legacy shape can opt out without
   # loosening the whole API, and a stricter tool can opt in under a lenient default.
+  # The 500 log line is an operator's only pointer to WHY an otherwise-successful call failed, and the
+  # value it reports on is resolved per-tool — so a hint naming only the gem-wide setter is a dead end
+  # whenever a `configure(:openapi)` override is what's in effect. Pinned because that is exactly how it
+  # regressed once: the hint was accurate until the setting became `overridable:`.
+  describe "the opaque-rejection log hint" do
+    # A real Logger over a StringIO rather than a double: axn's own call logger writes :info lines
+    # through this same object, so a verifying double would fail on those instead of on what's asserted.
+    def captured_log_for(axn)
+      io = StringIO.new
+      allow(Axn.config).to receive(:logger).and_return(Logger.new(io))
+      dispatch(axn, {})
+      io.string
+    end
+
+    it "names the offending tool and BOTH config levels, not just the gem-wide setter" do
+      line = captured_log_for(OpaqueTool)
+
+      expect(line).to include("OpaqueTool")                          # which action to go look at
+      expect(line).to include("configure(:openapi)")                 # the per-tool level, which wins
+      expect(line).to include("Axn::OpenAPI.config.reject_opaque_exposed_values") # the gem-wide level
+    end
+
+    it "omits the hint entirely when the rejection cannot be opaque-related" do
+      cyclic = Class.new do
+        include Axn
+
+        configure(:openapi) { |c| c.reject_opaque_exposed_values = false }
+        exposes :items
+        def call
+          a = [1]
+          a << a
+          expose(items: a)
+        end
+      end
+
+      line = captured_log_for(cyclic)
+      expect(line).to include("UnserializableValue")
+      expect(line).not_to include("reject_opaque_exposed_values")
+    end
+  end
+
   # The runtime half of the pair asserted in spec_generator_spec: a per-tool override must change what
   # the dispatcher actually enforces, not just what the document advertises.
   it "honors a per-tool reject_undeclared_inputs override at runtime" do
