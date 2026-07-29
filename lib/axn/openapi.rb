@@ -17,7 +17,11 @@ module Axn
     setting :spec_path, default: "/openapi.json"
 
     # Dispatch behavior.
-    setting :reject_undeclared_inputs, default: false
+    # `overridable` so a single strict endpoint can reject unknown body keys without imposing that on
+    # every tool (and vice versa). Both readers — the Dispatcher's runtime check and SpecGenerator's
+    # `additionalProperties` — must resolve it per-tool, or the published document would advertise a
+    # posture the runtime doesn't enforce for an overriding tool.
+    setting :reject_undeclared_inputs, default: false, one_of: [true, false], overridable: true
 
     # When true, serializing a successful result's `exposes` values rejects any value that has no JSON
     # rendering its author declared — one that would otherwise ship as an opaque blob like

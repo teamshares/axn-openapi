@@ -232,12 +232,38 @@ Axn::OpenAPI.config.path_prefix = "/axns"
 | --- | --- | --- |
 | `path_prefix` | `""` | Prepended to every tool route when computing the spec's paths and (for the mount skin) when matching an inbound request. Purely cosmetic when mounting — the mount point (`mount ... => "/api"`) already does the real prefixing at the Rack level. |
 | `spec_path` | `"/openapi.json"` | Where the mount skin serves the generated OpenAPI document (`GET`). |
-| `reject_undeclared_inputs` | `false` (lenient) | `false`: unknown top-level body keys are silently ignored (matches JSON Schema's `additionalProperties`-permitted posture; forward-compatible across client/server version skew). `true`: an unknown key fails as a 400, same bucket as any other input-contract violation. A typo on a *required* field always fails regardless of this setting. |
+| `reject_undeclared_inputs` | `false` (lenient) | `false`: unknown top-level body keys are silently ignored (matches JSON Schema's `additionalProperties`-permitted posture; forward-compatible across client/server version skew). `true`: an unknown key fails as a 400, same bucket as any other input-contract violation, and the published request schema tightens to `additionalProperties: false` to match. A typo on a *required* field always fails regardless of this setting. Settable per tool — see [Per-tool overrides](#per-tool-overrides). |
 | `reject_opaque_exposed_values` | `true` (strict) | `true`: an exposed value with no JSON rendering *its author declared* is a 500 rather than a body containing `"#<User:0x...>"` (or, in Rails, an instance-variable dump). `false`: that rendering ships, matching axn-mcp's default. See [Rejecting opaque exposed values](#rejecting-opaque-exposed-values-reject_opaque_exposed_values). |
 | `info_title` | `"Axn API"` | OpenAPI `info.title`. |
 | `info_version` | `"1.0.0"` | OpenAPI `info.version`. |
 | `info_description` | `nil` | OpenAPI `info.description`; omitted from the document when nil. |
 | `tool_roots` | `%w[agent_tools]` | Directory roots granting implicit `:openapi` membership (see above). Validated: a broad entry (`app`, `.`, `actions`, a `..` traversal) is rejected. |
+
+### Per-tool overrides
+
+The two behavioral knobs — `reject_undeclared_inputs` and `reject_opaque_exposed_values` — are also
+settable **per tool** via `configure(:openapi)`, matching axn-mcp's convention. The per-class value wins
+over the gem-wide one, so one endpoint can differ without loosening (or tightening) the whole API:
+
+```ruby
+class ListOwners
+  include Axn
+  tool :openapi
+
+  configure(:openapi) do |c|
+    c.reject_undeclared_inputs = true          # strict inbound, just for this endpoint
+    c.reject_opaque_exposed_values = false     # tolerate a legacy exposed value
+  end
+  # ...
+end
+```
+
+An override is honored by the generated document as well as at runtime: a tool with
+`reject_undeclared_inputs = true` publishes `additionalProperties: false` on *its* request schema only,
+so generated clients and OpenAPI validators match what the endpoint actually enforces.
+
+The remaining settings are gem-wide only — `path_prefix` / `spec_path` / `tool_roots` describe the
+mount and the registry rather than a tool, and the `info_*` values describe the one document.
 
 ## Rejecting opaque exposed values (`reject_opaque_exposed_values`)
 
@@ -264,18 +290,9 @@ consumer. Same knob, same name, different default per transport.
 Hash **keys** are held to the same standard: `serialize_value` renders keys via `#to_s`, so an opaque
 key would become a garbage JSON *property name*.
 
-Set it **gem-wide** (`Axn::OpenAPI.config.reject_opaque_exposed_values = false`) or **per tool** via
-`configure(:openapi)`; the per-class value wins over the gem-wide one. That lets one legacy endpoint
-opt out without loosening the contract for the whole API:
-
-```ruby
-class ListOwners
-  include Axn
-  tool :openapi
-  configure(:openapi) { |c| c.reject_opaque_exposed_values = false }
-  # ...
-end
-```
+Set it **gem-wide** (`Axn::OpenAPI.config.reject_opaque_exposed_values = false`) or **per tool** — see
+[Per-tool overrides](#per-tool-overrides) — which lets one legacy endpoint opt out without loosening the
+contract for the whole API.
 
 ### Values that are always rejected
 

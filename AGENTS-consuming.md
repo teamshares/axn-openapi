@@ -118,10 +118,16 @@ never the reverse.
 | --- | --- | --- |
 | `path_prefix` | `""` | Prefix used when computing spec paths / matching requests (mount skin). |
 | `spec_path` | `"/openapi.json"` | Where the mount skin serves the spec. |
-| `reject_undeclared_inputs` | `false` | `true` → an unknown body key is a 400; `false` → silently ignored. |
+| `reject_undeclared_inputs` | `false` | `true` → an unknown body key is a 400 and the published request schema sets `additionalProperties: false`; `false` → silently ignored. |
 | `reject_opaque_exposed_values` | `true` | `true` → an exposed value that declares no JSON projection of its own is a 500 instead of rendering an object address (or, in Rails, ActiveSupport's generic `as_json` ivar dump). Does not govern values with no JSON rendering *at all* — a cycle, keys that collapse to one property, a non-finite `Float`, non-UTF-8 bytes — which axn core rejects unconditionally. |
 | `info_title` / `info_version` / `info_description` | `"Axn API"` / `"1.0.0"` / `nil` | OpenAPI `info` block. |
 | `tool_roots` | `%w[agent_tools]` | Directories granting implicit `:openapi` membership. |
+
+Both behavioral knobs (`reject_undeclared_inputs`, `reject_opaque_exposed_values`) are **also settable
+per tool** via `configure(:openapi) { |c| ... }` on the Axn; the per-class value wins over the gem-wide
+one. A `reject_undeclared_inputs` override is reflected in the generated document too (that tool's
+request schema alone gets `additionalProperties: false`), so the spec always matches what the endpoint
+enforces. The other settings are gem-wide only.
 
 ## Generating the spec without mounting anything
 

@@ -38,6 +38,23 @@ RSpec.describe Axn::OpenAPI::Dispatcher do
   # store rather than straight off the gem-wide config — matching axn-mcp, where the same knob is
   # settable per tool. Both directions are pinned: a tool serving a legacy shape can opt out without
   # loosening the whole API, and a stricter tool can opt in under a lenient default.
+  # The runtime half of the pair asserted in spec_generator_spec: a per-tool override must change what
+  # the dispatcher actually enforces, not just what the document advertises.
+  it "honors a per-tool reject_undeclared_inputs override at runtime" do
+    strict = Class.new do
+      include Axn
+
+      configure(:openapi) { |c| c.reject_undeclared_inputs = true }
+      expects :message, type: String
+      exposes :echoed
+      def call = expose(echoed: message)
+    end
+
+    expect(Axn::OpenAPI.config.reject_undeclared_inputs).to be(false)
+    expect(dispatch(strict, { "message" => "hi", "surprise" => 1 }).status).to eq(400)
+    expect(dispatch(strict, { "message" => "hi" }).status).to eq(200)
+  end
+
   describe "per-tool override via configure(:openapi)" do
     it "lets a single tool opt out while the gem-wide default stays strict" do
       lenient = Class.new do

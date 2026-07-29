@@ -40,7 +40,10 @@ module Axn
       def call(axn_class:, params:, ambient_context: {})
         invoker = Axn::Tools::Invoker.new(
           user_facing_input_errors: true,
-          reject_undeclared_inputs: Axn::OpenAPI.config.reject_undeclared_inputs,
+          # Per-tool resolution, not a bare config read — SpecGenerator resolves the same way, so the
+          # published `additionalProperties` and this runtime check can't disagree for a tool that
+          # overrode it via `configure(:openapi)`.
+          reject_undeclared_inputs: Axn::OpenAPI.resolve_override_for(axn_class, :reject_undeclared_inputs),
         )
         # Top-level keys must be Symbols for the Invoker's `**` splat; nested Hashes stay as-is
         # (axn reads nested subfields by key from a Hash source regardless of key type).

@@ -43,6 +43,14 @@
   - The "disable with …" pointer moved out of the exception message into the dispatcher's `500` log
     line: core raises the same error for adapters that have no such setting, so it must not name this
     gem's config knob.
+- `[FEAT]` `reject_undeclared_inputs` is now `overridable:` too, so **both** behavioral knobs are
+  settable per tool via `configure(:openapi)` (the per-class value wins over the gem-wide one) —
+  consistent with each other and with axn-mcp. Both also gain `one_of: [true, false]`, which rejects a
+  non-boolean assignment at write time instead of letting a truthy `"false"` silently invert the intent.
+  Note the override is honored by **both** readers of the setting: `SpecGenerator` resolves it per tool
+  as the `Dispatcher` does, so a tool that opts in publishes `additionalProperties: false` on its own
+  request schema only — a per-tool override the document ignored would send generated clients a payload
+  the endpoint then 400s (the same spec-vs-runtime drift an earlier entry below fixed gem-wide).
 - `[BUGFIX]` `Axn::OpenAPI::App` dups + freezes the resolved `path_prefix`, so mutating the source
   String after construction can't drift the prefix captured by the spec provider away from the
   router's route map.
