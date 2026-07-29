@@ -10,26 +10,33 @@
   document included, not just `Dispatcher.call`'s. An unencodable body (e.g. invalid UTF-8 from a
   request path) maps to the generic 500 instead of raising out of the renderer. Relatedly, the 404
   "unknown tool" body no longer echoes the raw request path (untrusted, possibly invalid-UTF-8 input).
-- `[BREAKING]` The `strict_serialization` setting is now **`reject_opaque`** (same `true` default), and
-  every "this exposed value has no honest JSON representation" check is delegated to axn core's
-  `Axn::Reflection::Values.serialize_exposed(reject_opaque:)`, which requires axn including
-  [teamshares/axn#206](https://github.com/teamshares/axn/pull/206) — the gemspec floor is raised to
-  `>= 0.1.0-alpha.5` accordingly (that PR merged after the alpha.5 release commit without a version
-  bump, and alpha.5 was never published, so this excludes every published axn that lacks it). This gem
-  no longer walks the value graph itself — `Serializer` is now a one-line pass-through, and
+- `[BREAKING]` The `strict_serialization` setting is now **`reject_opaque_exposed_values`** (same `true`
+  default), and every "this exposed value has no honest JSON representation" check is delegated to axn
+  core's `Axn::Reflection::Values.serialize_exposed(reject_opaque:)` — see axn
+  [#206](https://github.com/teamshares/axn/pull/206) / PRO-2988, shipped in `0.1.0-alpha.5`, which the
+  gemspec floor is raised to accordingly. The new name is axn-mcp's, reused verbatim so one concept has
+  one name across the adapter family: it names *what it rejects* (rather than a vague `strict:`, which
+  would wrongly imply the non-rejected output might not be JSON) and qualifies it with `exposed` so it
+  is unambiguously about outbound `exposes` serialization, not inbound `coerce:`. Also `overridable:`,
+  again matching axn-mcp — a single tool can opt out via
+  `configure(:openapi) { |c| c.reject_opaque_exposed_values = false }` without loosening the whole API,
+  and the per-class value wins over the gem-wide one. This gem no longer walks the value graph itself —
+  `Serializer` is now a one-line pass-through, and
   `Axn::OpenAPI::UnserializableExposureError` is **removed** in favor of core's
   `Axn::Reflection::UnserializableValue` (an `ArgumentError`, which also names the offending field path).
   Rescue that instead if you referenced the old class. Behavior changes worth noting:
-  - Rejections split into two tiers. `reject_opaque` governs only values that would render *honestly
-    but unpresentably* — a value or Hash key whose only `to_s` is the inherited `Object#to_s`. Values
+  - Rejections split into two tiers. `reject_opaque_exposed_values` governs only values that would
+    render *honestly but unpresentably* — a value or Hash key whose only `to_s` is the inherited
+    `Object#to_s`, or (in Rails) whose only `as_json` is ActiveSupport's generic one. Values
     with no JSON rendering **at all** are now rejected regardless of the setting, because the
     alternative is a body `JSON.generate` refuses or one that silently lost data: a cycle, two Hash
     keys (or two exposed field names) that collapse to one JSON property, a non-finite `Float`
     (including via `BigDecimal`/`Rational` coercion), or a `String` whose bytes have no UTF-8
     rendering. Previously `strict_serialization = false` let several of these through to the encode
     gate (or, for the collapse case, to a silently-lossy `200`).
-  - **In a Rails app, `reject_opaque` now also rejects a value whose only `as_json` is ActiveSupport's
-    generic `Object#as_json`** (one declaring no `as_json`, `to_h`, or `to_hash` of its own). That
+  - **In a Rails app, `reject_opaque_exposed_values` now also rejects a value whose only `as_json` is
+    ActiveSupport's generic `Object#as_json`** (one declaring no `as_json`, `to_h`, or `to_hash` of
+    its own). That
     generic implementation dumps instance variables, so such a value previously passed strict mode and
     returned a `200` whose body leaked internals and matched no declared schema; it is now a `500`.
     Give the value its own `as_json`/`to_h`, or declare it `type: String` and format it.
@@ -80,7 +87,7 @@
 - `[BUGFIX]` Hardened the serialization path against self-referential (cyclic) Array/Hash values, which
   would otherwise recurse to `SystemStackError`; the dispatcher's success boundary also catches
   `SystemStackError` (not a `StandardError`) as a backstop → generic `500`. Cycle detection itself now
-  lives in axn core (see the `reject_opaque` entry below), which additionally guards the case this gem's
+  lives in axn core (see the `reject_opaque_exposed_values` entry above), which additionally guards the case this gem's
   own walk missed: a projection pointing back at its source (`def to_h = { child: self }`) recursed
   unboundedly here, because only the `Hash`/`Array` branch was guarded, never the `as_json`/`to_h`
   source object. Core guards the source object.
@@ -89,7 +96,7 @@
   an unencodable body (a non-finite number, or a `String` with invalid UTF-8 such as a `fail!` message
   carrying binary data from an upstream service) maps to the documented generic `500` instead of
   raising mid-render and escaping the Rack app / host framework. Previously only the success body was
-  guarded; a bad `fail!`/validation message would have raised. Works regardless of `reject_opaque`;
+  guarded; a bad `fail!`/validation message would have raised. Works regardless of `reject_opaque_exposed_values`;
   exceptions raised *during* serialization (projection errors, cycles) are still caught too. The gate
   is retained now that core guarantees no *value* `JSON.generate` refuses, because that is a promise
   about values rather than about encoder options — a body nested deeper than JSON's `max_nesting`
@@ -97,7 +104,7 @@
   router 404 or the generated spec document.
 - `[BUGFIX]` Hash **keys** are validated, not just values: `serialize_value` stringifies keys via
   `#to_s`, so a key with only the default `Object#to_s` (which would render as garbage like
-  `"#<User:0x…>"`) is rejected under `reject_opaque`, exactly as such a value is — and two keys that
+  `"#<User:0x…>"`) is rejected under `reject_opaque_exposed_values`, exactly as such a value is — and two keys that
   stringify to the same JSON property (e.g. `{ id: 1, "id" => 2 }`) are rejected unconditionally,
   since stringifying would silently collapse them and drop a value. Both now enforced by axn core.
 - `[BUGFIX]` `SpecGenerator` now derives each operation's `requestBody.required` from the input
@@ -107,7 +114,7 @@
   generated clients no longer reject a request that succeeds at runtime.
 - `[FEAT]` `Axn::OpenAPI` (renamed from the scaffolded `Axn::Openapi`) is now `Axn::Configurable` +
   `Axn::Tools::AdapterRoots`, with settings `path_prefix` (`""`), `spec_path` (`"/openapi.json"`),
-  `reject_undeclared_inputs` (`false`), `reject_opaque` (`true`), `info_title` (`"Axn API"`),
+  `reject_undeclared_inputs` (`false`), `reject_opaque_exposed_values` (`true`), `info_title` (`"Axn API"`),
   `info_version` (`"1.0.0"`), `info_description` (`nil`), and `tool_roots` (`%w[agent_tools]` — an
   Axn under `app/agent_tools/` is served with no explicit `tool :openapi`, matching axn-mcp/
   axn-ruby_llm's convention). Registers `:openapi` as a tool adapter with axn core's process-global

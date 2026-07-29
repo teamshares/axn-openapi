@@ -233,18 +233,57 @@ Axn::OpenAPI.config.path_prefix = "/axns"
 | `path_prefix` | `""` | Prepended to every tool route when computing the spec's paths and (for the mount skin) when matching an inbound request. Purely cosmetic when mounting — the mount point (`mount ... => "/api"`) already does the real prefixing at the Rack level. |
 | `spec_path` | `"/openapi.json"` | Where the mount skin serves the generated OpenAPI document (`GET`). |
 | `reject_undeclared_inputs` | `false` (lenient) | `false`: unknown top-level body keys are silently ignored (matches JSON Schema's `additionalProperties`-permitted posture; forward-compatible across client/server version skew). `true`: an unknown key fails as a 400, same bucket as any other input-contract violation. A typo on a *required* field always fails regardless of this setting. |
-| `reject_opaque` | `true` (strict) | `true`: an exposed value that declares no JSON projection of its own is a 500. That means a value (or Hash key) whose only `to_s` is the inherited `Object#to_s`, and — in a Rails app — one whose only `as_json` is ActiveSupport's generic `Object#as_json`. Shipping `"#<User:0x...>"` or an instance-variable dump in a published HTTP contract is a bug. `false`: renders whichever of those Rails/plain-Ruby fallbacks applies, matching MCP's leniency (output there goes to an LLM, not a strict published contract). Values that have no JSON rendering **at all** are rejected regardless of this setting — see below. |
+| `reject_opaque_exposed_values` | `true` (strict) | `true`: an exposed value with no JSON rendering *its author declared* is a 500 rather than a body containing `"#<User:0x...>"` (or, in Rails, an instance-variable dump). `false`: that rendering ships, matching axn-mcp's default. See [Rejecting opaque exposed values](#rejecting-opaque-exposed-values-reject_opaque_exposed_values). |
 | `info_title` | `"Axn API"` | OpenAPI `info.title`. |
 | `info_version` | `"1.0.0"` | OpenAPI `info.version`. |
 | `info_description` | `nil` | OpenAPI `info.description`; omitted from the document when nil. |
 | `tool_roots` | `%w[agent_tools]` | Directory roots granting implicit `:openapi` membership (see above). Validated: a broad entry (`app`, `.`, `actions`, a `..` traversal) is rejected. |
 
+## Rejecting opaque exposed values (`reject_opaque_exposed_values`)
+
+When a successful result's `exposes` values are serialized into the response body, most values have an
+obvious JSON form (a `String`, a `Hash`, a `Data.define`, …). But an exposed value can be **opaque** —
+it has no JSON rendering *its author declared*, so it falls back to a generic one that leaks Ruby
+internals: a bare object serializes to the string `"#<User:0x000055…>"`, and in a Rails app
+ActiveSupport's generic `as_json` instead dumps the object's instance variables. Concretely, a value is
+opaque when its only `to_s` is the one inherited from `Object` and it defines no `to_h`/`to_hash`/custom
+`as_json` — i.e. it never told the serializer how it wants to look as JSON.
+
+`reject_opaque_exposed_values` decides what happens when that occurs:
+
+- **`true` (default)** — serialization raises `Axn::Reflection::UnserializableValue` (naming the exact
+  path, e.g. `records[3].owner`), which the dispatcher logs and maps to a generic 500 rather than
+  publishing the blob.
+- **`false`** — the opaque rendering ships in the response body.
+
+**This default is the opposite of axn-mcp's**, deliberately. An MCP tool result goes to an LLM, where
+an ugly-but-honest string usually beats a failed call; an OpenAPI response is a *published contract*
+with a declared `output_schema`, and `"#<User:0x…>"` matches no schema and leaks internals to every
+consumer. Same knob, same name, different default per transport.
+
+Hash **keys** are held to the same standard: `serialize_value` renders keys via `#to_s`, so an opaque
+key would become a garbage JSON *property name*.
+
+Set it **gem-wide** (`Axn::OpenAPI.config.reject_opaque_exposed_values = false`) or **per tool** via
+`configure(:openapi)`; the per-class value wins over the gem-wide one. That lets one legacy endpoint
+opt out without loosening the contract for the whole API:
+
+```ruby
+class ListOwners
+  include Axn
+  tool :openapi
+  configure(:openapi) { |c| c.reject_opaque_exposed_values = false }
+  # ...
+end
+```
+
 ### Values that are always rejected
 
-`reject_opaque` governs only values that would render *honestly but unpresentably*. Serialization is
-owned by axn core (`Axn::Reflection::Values.serialize_exposed`), which unconditionally refuses values
-that have no JSON rendering at all — turning `reject_opaque` off does **not** buy these back, because
-the alternative is a body `JSON.generate` refuses or one that silently lost data:
+`reject_opaque_exposed_values` is narrow: it toggles only the extra "was this rendering
+author-declared?" test. Serialization itself is owned by axn core
+(`Axn::Reflection::Values.serialize_exposed`), which unconditionally refuses values that have no
+**honest** JSON form at all — turning the setting off does **not** buy these back, because the
+alternative is a body `JSON.generate` refuses or one that silently lost data:
 
 - a self-referential container (a cycle has no JSON representation);
 - two Hash keys — or two exposed field names — that stringify to the same JSON property, which would
@@ -270,7 +309,7 @@ find out whether a call succeeded.
 | `404` | Path maps to no registered tool, **or** a known tool at an unregistered version — mount skin only. The latter's message names the latest available version's path | `{"error": {"message": "..."}}` |
 | `405` | Known tool path, wrong HTTP verb — every route is `POST` (mount skin only) | `{"error": {"message": "..."}}` |
 | `422` | A well-formed request the Axn itself refused via `fail!` — "we understood you, but can't complete the operation" | `{"error": {"message": "<the fail! message, verbatim>"}}` |
-| `500` | An unexpected exception, or an unserializable exposed value on an otherwise-successful result (see [Values that are always rejected](#values-that-are-always-rejected) and `reject_opaque`) — generic message, no internal detail leaked | `{"error": {"message": "Internal Server Error"}}` |
+| `500` | An unexpected exception, or an unserializable exposed value on an otherwise-successful result (see [Values that are always rejected](#values-that-are-always-rejected) and `reject_opaque_exposed_values`) — generic message, no internal detail leaked | `{"error": {"message": "Internal Server Error"}}` |
 
 > **Validation → 400, business `fail!` → 422 is intentional, not an oversight.** It runs against the
 > common Rails/FastAPI reflex of "422 = validation failed." Here, `422` keeps its literal RFC 9110

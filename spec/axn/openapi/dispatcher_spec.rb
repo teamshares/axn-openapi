@@ -29,9 +29,46 @@ RSpec.describe Axn::OpenAPI::Dispatcher do
     expect(d.body).to eq("error" => { "message" => "Internal Server Error" })
   end
 
-  it "returns 500 when a successful result exposes an opaque value (reject_opaque)" do
+  it "returns 500 when a successful result exposes an opaque value (reject_opaque_exposed_values)" do
     d = dispatch(OpaqueTool, {})
     expect(d.status).to eq(500)
+  end
+
+  # `reject_opaque_exposed_values` is `overridable:`, so it resolves per-tool through the override
+  # store rather than straight off the gem-wide config — matching axn-mcp, where the same knob is
+  # settable per tool. Both directions are pinned: a tool serving a legacy shape can opt out without
+  # loosening the whole API, and a stricter tool can opt in under a lenient default.
+  describe "per-tool override via configure(:openapi)" do
+    it "lets a single tool opt out while the gem-wide default stays strict" do
+      lenient = Class.new do
+        include Axn
+
+        configure(:openapi) { |c| c.reject_opaque_exposed_values = false }
+        exposes :thing
+        def call = expose(thing: OpaqueValue.new)
+      end
+
+      expect(Axn::OpenAPI.config.reject_opaque_exposed_values).to be(true)
+      expect(dispatch(lenient, {}).status).to eq(200)
+      # The gem-wide default is untouched for every other tool.
+      expect(dispatch(OpaqueTool, {}).status).to eq(500)
+    end
+
+    it "lets a per-tool true win over a lenient gem-wide setting" do
+      strict = Class.new do
+        include Axn
+
+        configure(:openapi) { |c| c.reject_opaque_exposed_values = true }
+        exposes :thing
+        def call = expose(thing: OpaqueValue.new)
+      end
+
+      Axn::OpenAPI.config.reject_opaque_exposed_values = false
+      expect(dispatch(strict, {}).status).to eq(500)
+      expect(dispatch(OpaqueTool, {}).status).to eq(200)
+    ensure
+      Axn::OpenAPI.config.reject_opaque_exposed_values = true
+    end
   end
 
   # Core raises these regardless of reject_opaque, and they are raised where an adapter that skipped

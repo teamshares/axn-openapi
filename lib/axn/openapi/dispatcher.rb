@@ -84,7 +84,13 @@ module Axn
       end
 
       def success(axn_class, result)
-        reject_opaque = Axn::OpenAPI.config.reject_opaque
+        # The one place the adapter's config vocabulary is translated to core's keyword — Serializer
+        # sits adjacent to core's call and speaks core's name for it.
+        #
+        # Resolved via resolve_override_for rather than read off `config`, so a per-tool
+        # `configure(:openapi)` override wins over the gem-wide default (and so a same-named class
+        # method on the action can't silently shadow the override store).
+        reject_opaque = Axn::OpenAPI.resolve_override_for(axn_class, :reject_opaque_exposed_values)
         body = Serializer.serialize(result, axn_class.external_field_configs, reject_opaque:)
         Dispatch.new(200, body)
       rescue StandardError, SystemStackError => e
@@ -97,10 +103,10 @@ module Axn
         # arbitrary user code, and an as_json/to_h projection is free to recurse on its own. It is not
         # a StandardError, so it would otherwise escape the Rack app / controller.
         #
-        # The `reject_opaque` pointer lives HERE rather than in the exception message: core raises the
-        # same error for adapters that have no such setting, so it must not name this gem's config knob.
-        # An operator reads this line, which is the one place that knows both the error and the knob.
-        hint = reject_opaque ? " (if this is an opaque-value rejection, disable with Axn::OpenAPI.config.reject_opaque = false)" : ""
+        # The config pointer lives HERE rather than in the exception message: core raises the same error
+        # for adapters that have no such setting, so it must not name this gem's config knob. An
+        # operator reads this line, which is the one place that knows both the error and the knob.
+        hint = reject_opaque ? " (if this is an opaque-value rejection, disable with Axn::OpenAPI.config.reject_opaque_exposed_values = false)" : ""
         Axn.config.logger.error { "[axn-openapi] failed to serialize successful result: #{e.class}: #{e.message}#{hint}" }
         Dispatch.new(500, GENERIC_500)
       end
