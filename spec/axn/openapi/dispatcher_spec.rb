@@ -11,6 +11,61 @@ RSpec.describe Axn::OpenAPI::Dispatcher do
     expect(d.body).to eq("echoed" => "hi")
   end
 
+  # The 200 body is whatever Axn::Extensions::Serialization.render renders, so the exhaustive
+  # per-defect matrix (which values are opaque, how cycles/collisions/non-finite numbers are detected)
+  # lives in axn core's own specs — duplicating it here would re-create, in test form, exactly the
+  # parallel walk this gem deleted. What these pin is that the adapter reaches that renderer at all
+  # and hands its output through untouched: a non-String leaf arrives wire-shaped, not `#inspect`ed,
+  # and nesting is walked rather than stringified whole.
+  describe "the success body core renders" do
+    it "renders a non-String leaf in its schema-aligned wire form" do
+      klass = Class.new do
+        include Axn
+
+        exposes :n, type: Integer
+        exposes :t, type: Time
+        def call = expose(n: 3, t: Time.utc(2020, 1, 2, 3, 4, 5))
+      end
+      expect(dispatch(klass, {}).body).to eq("n" => 3, "t" => "2020-01-02T03:04:05Z")
+    end
+
+    it "renders a nested Hash/Array of safe leaves" do
+      klass = Class.new do
+        include Axn
+
+        exposes :data
+        def call = expose(data: { "items" => [1, 2], "when" => Time.utc(2020, 1, 1) })
+      end
+      expect(dispatch(klass, {}).body)
+        .to eq("data" => { "items" => [1, 2], "when" => "2020-01-01T00:00:00Z" })
+    end
+
+    # The two ways strict rejection could over-fire and turn a fine result into a 500: a value whose
+    # author DID declare a rendering (so it isn't opaque), and a graph that repeats a reference
+    # without cycling (so it isn't self-referential).
+    it "renders a value with a meaningful custom to_s rather than rejecting it" do
+      money = Class.new { def to_s = "$4.00" }
+      klass = Class.new do
+        include Axn
+
+        exposes :price
+        define_method(:call) { expose(price: money.new) }
+      end
+      expect(dispatch(klass, {}).body).to eq("price" => "$4.00")
+    end
+
+    it "renders a shared but acyclic reference (diamond) rather than reporting a cycle" do
+      shared = { "x" => 1 }
+      klass = Class.new do
+        include Axn
+
+        exposes :data
+        define_method(:call) { expose(data: { "a" => shared, "b" => shared }) }
+      end
+      expect(dispatch(klass, {}).body).to eq("data" => { "a" => { "x" => 1 }, "b" => { "x" => 1 } })
+    end
+  end
+
   it "returns 400 with field_errors on invalid input" do
     d = dispatch(EchoTool, {}) # missing required :message
     expect(d.status).to eq(400)
@@ -130,9 +185,9 @@ RSpec.describe Axn::OpenAPI::Dispatcher do
   end
 
   # Core raises these regardless of reject_opaque, and they are raised where an adapter that skipped
-  # its own pre-pass would otherwise have shipped a broken body. Pinned at the Dispatcher (not just
-  # the Serializer) because the risk of removing the pre-pass was an ESCAPED exception rather than a
-  # wrong status: these must surface as the documented generic 500, not raise out of the Rack app.
+  # its own pre-pass would otherwise have shipped a broken body. Pinned here because the risk of
+  # removing the pre-pass was an ESCAPED exception rather than a wrong status: these must surface as
+  # the documented generic 500, not raise out of the Rack app.
   it "returns 500 (no leak) when exposed Hash keys collapse to one JSON property" do
     klass = Class.new do
       include Axn
@@ -200,7 +255,7 @@ RSpec.describe Axn::OpenAPI::Dispatcher do
 
   it "maps a SystemStackError during serialization to a generic 500 (not a StandardError)" do
     # e.g. a self-referential structure recursing past the guard; backstop so it never escapes.
-    allow(Axn::OpenAPI::Serializer).to receive(:serialize).and_raise(SystemStackError)
+    allow(Axn::Extensions::Serialization).to receive(:render).and_raise(SystemStackError)
     d = dispatch(EchoTool, { "message" => "hi" })
     expect(d.status).to eq(500)
     expect(d.body).to eq("error" => { "message" => "Internal Server Error" })

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- `[INTERNAL]` Success bodies now render through axn core's declared adapter entry point,
+  `Axn::Extensions::Serialization.render(result, reject_opaque:)` — see axn
+  [#207](https://github.com/teamshares/axn/pull/207) / PRO-2992, which made
+  `Axn::Reflection::Values.serialize_exposed` private and derives the declared `exposes` configs from
+  the result itself, so there is no `field_configs` argument to pass. No behavior change: the same code
+  renders the same bodies and raises the same `Axn::Reflection::UnserializableValue`. With
+  `field_configs` gone, `Axn::OpenAPI::Serializer` had nothing left to do that core's facade wasn't
+  already doing under a better name, so the module is **removed** and `Dispatcher#success` calls
+  `render` directly. It was public but undocumented (the README documents the *setting*, never the
+  module); if you called `Serializer.serialize(result, configs, reject_opaque:)` yourself, call
+  `Axn::Extensions::Serialization.render(result, reject_opaque:)` instead.
 - `[BUGFIX]` A request body with invalid UTF-8 is now rejected as a malformed-body `400` (JSON must be
   UTF-8 per RFC 8259). Previously a bad object key (e.g. `{"\xFF":1}`) survived parsing and blew up in
   key symbolization — before any `Dispatch` existed, so it escaped the render-boundary encode gate.
@@ -12,7 +23,7 @@
   "unknown tool" body no longer echoes the raw request path (untrusted, possibly invalid-UTF-8 input).
 - `[BREAKING]` The `strict_serialization` setting is now **`reject_opaque_exposed_values`** (same `true`
   default), and every "this exposed value has no honest JSON representation" check is delegated to axn
-  core's `Axn::Reflection::Values.serialize_exposed(reject_opaque:)` — see axn
+  core's `Axn::Extensions::Serialization.render(reject_opaque:)` — see axn
   [#206](https://github.com/teamshares/axn/pull/206) / PRO-2988, shipped in `0.1.0-alpha.5`, which the
   gemspec floor is raised to accordingly. The new name is axn-mcp's, reused verbatim so one concept has
   one name across the adapter family: it names *what it rejects* (rather than a vague `strict:`, which
@@ -20,8 +31,7 @@
   is unambiguously about outbound `exposes` serialization, not inbound `coerce:`. Also `overridable:`,
   again matching axn-mcp — a single tool can opt out via
   `configure(:openapi) { |c| c.reject_opaque_exposed_values = false }` without loosening the whole API,
-  and the per-class value wins over the gem-wide one. This gem no longer walks the value graph itself —
-  `Serializer` is now a one-line pass-through, and
+  and the per-class value wins over the gem-wide one. This gem no longer walks the value graph itself, and
   `Axn::OpenAPI::UnserializableExposureError` is **removed** in favor of core's
   `Axn::Reflection::UnserializableValue` (an `ArgumentError`, which also names the offending field path).
   Rescue that instead if you referenced the old class. Behavior changes worth noting:
@@ -131,7 +141,8 @@
 - `[FEAT]` `Axn::OpenAPI::Dispatcher.call(axn_class:, params:, ambient_context: {})` is the spine all
   skins delegate to: it runs the Axn through core's `Axn::Tools::Invoker` and maps the returned
   `Axn::Result` to an `Axn::OpenAPI::Dispatch` (`Data.define(:status, :body)`) per the approved
-  status scheme — 200 on success (serialized via `Serializer`), 400 with `field_errors` on caller
+  status scheme — 200 on success (body rendered by core's `Axn::Extensions::Serialization.render`),
+  400 with `field_errors` on caller
   input-contract violations (`Invoker.input_invalid?`), 422 with the `fail!` message on a business
   failure, and a generic no-leak 500 on any other exception or on an `Axn::Reflection::UnserializableValue`
   from serialization (logged via `Axn.config.logger.error`). `params` top-level keys are
