@@ -41,7 +41,7 @@ module Axn
         input_schema = axn.input_schema
         op = {
           "operationId" => entry.operation_id,
-          "requestBody" => request_body(input_schema),
+          "requestBody" => request_body(input_schema, axn),
           "responses" => {
             "200" => { "description" => "Success", "content" => { "application/json" => { "schema" => axn.output_schema } } },
             "400" => error_response("Invalid request"),
@@ -59,14 +59,17 @@ module Axn
       # fields — an ambient-context-only tool (empty input schema), or one whose inputs are all
       # optional — accepts a blank body (the router parses a blank body as `{}`), so forcing a body
       # would make OpenAPI validators and generated clients reject a request that succeeds at runtime.
-      def request_body(input_schema)
+      def request_body(input_schema, axn)
         schema = input_schema
         # When the adapter rejects unknown top-level fields at runtime (reject_undeclared_inputs),
         # reflect that in the published schema — otherwise OpenAPI validators / generated clients
         # accept or send a payload the mounted API will 400. Core leaves additionalProperties at JSON
         # Schema's permissive default; tighten it to match. `merge` returns a new Hash (never mutates
         # the core-owned input_schema). Top-level only — that's the scope of the runtime check.
-        schema = schema.merge(additionalProperties: false) if Axn::OpenAPI.config.reject_undeclared_inputs
+        #
+        # Resolved PER TOOL (the setting is `overridable:`), exactly as the Dispatcher resolves it, so a
+        # tool that overrode it via `configure(:openapi)` is advertised the way it actually behaves.
+        schema = schema.merge(additionalProperties: false) if Axn::OpenAPI.resolve_override_for(axn, :reject_undeclared_inputs)
         {
           "required" => Array(input_schema[:required]).any?,
           "content" => { "application/json" => { "schema" => schema } },

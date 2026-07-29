@@ -40,7 +40,10 @@ module Axn
       def call(axn_class:, params:, ambient_context: {})
         invoker = Axn::Tools::Invoker.new(
           user_facing_input_errors: true,
-          reject_undeclared_inputs: Axn::OpenAPI.config.reject_undeclared_inputs,
+          # Per-tool resolution, not a bare config read — SpecGenerator resolves the same way, so the
+          # published `additionalProperties` and this runtime check can't disagree for a tool that
+          # overrode it via `configure(:openapi)`.
+          reject_undeclared_inputs: Axn::OpenAPI.resolve_override_for(axn_class, :reject_undeclared_inputs),
         )
         # Top-level keys must be Symbols for the Invoker's `**` splat; nested Hashes stay as-is
         # (axn reads nested subfields by key from a Hash source regardless of key type).
@@ -62,8 +65,19 @@ module Axn
       # `fail!`/validation message, a router 404 that echoes request-derived text, or a generated spec
       # doc — all of which may carry attacker- or upstream-influenced strings (e.g. invalid UTF-8). An
       # unencodable body maps to the documented generic 500 instead of raising mid-render and escaping
-      # the Rack app / controller. `SystemStackError` is named explicitly (a cyclic body recurses past
-      # StandardError). The 500 body is trivially encodable, so an already-500 dispatch passes through.
+      # the Rack app / controller. The 500 body is trivially encodable, so an already-500 dispatch
+      # passes through.
+      #
+      # Still required even though core's serializer now guarantees no *value* JSON.generate refuses
+      # (it rejects non-finite numbers, non-UTF-8 bytes, cycles, and collapsed property names itself),
+      # for two reasons. That guarantee is about values, not about encoder OPTIONS: a structure nested
+      # deeper than JSON's max_nesting still raises JSON::NestingError here. And it covers only bodies
+      # core built — a router 404 or a generated spec document never passes through serialize_exposed
+      # at all, and those are exactly the request-derived bodies most likely to carry bad bytes.
+      #
+      # `SystemStackError` is named explicitly: deep nesting is the failure mode this gate now exists
+      # for, and a body deep enough to exhaust the stack rather than trip max_nesting raises outside
+      # StandardError.
       def ensure_encodable(dispatch)
         JSON.generate(dispatch.body)
         dispatch
@@ -73,16 +87,44 @@ module Axn
       end
 
       def success(axn_class, result)
-        body = Serializer.serialize(result, axn_class.external_field_configs,
-                                    strict: Axn::OpenAPI.config.strict_serialization)
+        # The one place the adapter's config vocabulary is translated to core's keyword — Serializer
+        # sits adjacent to core's call and speaks core's name for it.
+        #
+        # Resolved via resolve_override_for rather than read off `config`, so a per-tool
+        # `configure(:openapi)` override wins over the gem-wide default (and so a same-named class
+        # method on the action can't silently shadow the override store).
+        reject_opaque = Axn::OpenAPI.resolve_override_for(axn_class, :reject_opaque_exposed_values)
+        body = Serializer.serialize(result, axn_class.external_field_configs, reject_opaque:)
         Dispatch.new(200, body)
       rescue StandardError, SystemStackError => e
-        # Serialization itself failed (before we could build a body): an unrepresentable value
-        # (UnserializableExposureError), an exception from a value's own as_json/to_h projection, or a
-        # self-referential container recursing to SystemStackError (not a StandardError, so named).
-        # A server-side problem, not a 200 → generic 500. (Pure encode failures are caught centrally
-        # by ensure_encodable; this rescue is for exceptions raised DURING serialize_exposed.)
-        Axn.config.logger.error { "[axn-openapi] failed to serialize successful result: #{e.class}: #{e.message}" }
+        # Serialization itself failed (before we could build a body): a value with no honest JSON
+        # representation (core's Axn::Reflection::UnserializableValue, which names the offending
+        # field path), or an exception raised by a value's own as_json/to_h projection. A server-side
+        # problem, not a 200 → generic 500.
+        #
+        # SystemStackError is still named even though core now cycle-guards its own walk: `result` is
+        # arbitrary user code, and an as_json/to_h projection is free to recurse on its own. It is not
+        # a StandardError, so it would otherwise escape the Rack app / controller.
+        #
+        # The config pointer lives HERE rather than in the exception message: core raises the same error
+        # for adapters that have no such setting, so it must not name this gem's config knob. An
+        # operator reads this line, which is the one place that knows both the error and the knob.
+        #
+        # It names the TOOL and BOTH levels, never just the gem-wide setter. The value is resolved
+        # per-tool, so a `configure(:openapi)` override on this action beats `config` — pointing an
+        # operator at the gem-wide setting would be a dead end whenever the override is what's in
+        # effect (worst case: the gem-wide value is already `false`, so following the advice changes
+        # nothing and the endpoint keeps 500ing). Core exposes no way to ask which level supplied a
+        # resolved value — `resolve_override_for` collapses override and fallback — so the honest hint
+        # describes both and lets the operator look at the one action it names.
+        hint = if reject_opaque
+                 " (if this is an opaque-value rejection: reject_opaque_exposed_values resolved true for " \
+                   "#{axn_class} — unset it on the action via `configure(:openapi)`, or gem-wide via " \
+                   "`Axn::OpenAPI.config.reject_opaque_exposed_values = false`, whichever is set)"
+               else
+                 ""
+               end
+        Axn.config.logger.error { "[axn-openapi] failed to serialize successful result: #{e.class}: #{e.message}#{hint}" }
         Dispatch.new(500, GENERIC_500)
       end
 

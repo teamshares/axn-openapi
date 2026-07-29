@@ -232,12 +232,86 @@ Axn::OpenAPI.config.path_prefix = "/axns"
 | --- | --- | --- |
 | `path_prefix` | `""` | Prepended to every tool route when computing the spec's paths and (for the mount skin) when matching an inbound request. Purely cosmetic when mounting — the mount point (`mount ... => "/api"`) already does the real prefixing at the Rack level. |
 | `spec_path` | `"/openapi.json"` | Where the mount skin serves the generated OpenAPI document (`GET`). |
-| `reject_undeclared_inputs` | `false` (lenient) | `false`: unknown top-level body keys are silently ignored (matches JSON Schema's `additionalProperties`-permitted posture; forward-compatible across client/server version skew). `true`: an unknown key fails as a 400, same bucket as any other input-contract violation. A typo on a *required* field always fails regardless of this setting. |
-| `strict_serialization` | `true` (strict) | `true`: an exposed value with no meaningful JSON projection (no own `as_json`/`to_h`, only the inherited `Object#to_s`) is a 500 — shipping `"#<User:0x...>"` in a published HTTP contract is a bug. `false`: falls back to `#to_s`, matching MCP's leniency (output there goes to an LLM, not a strict published contract). |
+| `reject_undeclared_inputs` | `false` (lenient) | `false`: unknown top-level body keys are silently ignored (matches JSON Schema's `additionalProperties`-permitted posture; forward-compatible across client/server version skew). `true`: an unknown key fails as a 400, same bucket as any other input-contract violation, and the published request schema tightens to `additionalProperties: false` to match. A typo on a *required* field always fails regardless of this setting. Settable per tool — see [Per-tool overrides](#per-tool-overrides). |
+| `reject_opaque_exposed_values` | `true` (strict) | `true`: an exposed value with no JSON rendering *its author declared* is a 500 rather than a body containing `"#<User:0x...>"` (or, in Rails, an instance-variable dump). `false`: that rendering ships, matching axn-mcp's default. See [Rejecting opaque exposed values](#rejecting-opaque-exposed-values-reject_opaque_exposed_values). |
 | `info_title` | `"Axn API"` | OpenAPI `info.title`. |
 | `info_version` | `"1.0.0"` | OpenAPI `info.version`. |
 | `info_description` | `nil` | OpenAPI `info.description`; omitted from the document when nil. |
 | `tool_roots` | `%w[agent_tools]` | Directory roots granting implicit `:openapi` membership (see above). Validated: a broad entry (`app`, `.`, `actions`, a `..` traversal) is rejected. |
+
+### Per-tool overrides
+
+The two behavioral knobs — `reject_undeclared_inputs` and `reject_opaque_exposed_values` — are also
+settable **per tool** via `configure(:openapi)`, matching axn-mcp's convention. The per-class value wins
+over the gem-wide one, so one endpoint can differ without loosening (or tightening) the whole API:
+
+```ruby
+class ListOwners
+  include Axn
+  tool :openapi
+
+  configure(:openapi) do |c|
+    c.reject_undeclared_inputs = true          # strict inbound, just for this endpoint
+    c.reject_opaque_exposed_values = false     # tolerate a legacy exposed value
+  end
+  # ...
+end
+```
+
+An override is honored by the generated document as well as at runtime: a tool with
+`reject_undeclared_inputs = true` publishes `additionalProperties: false` on *its* request schema only,
+so generated clients and OpenAPI validators match what the endpoint actually enforces.
+
+The remaining settings are gem-wide only — `path_prefix` / `spec_path` / `tool_roots` describe the
+mount and the registry rather than a tool, and the `info_*` values describe the one document.
+
+## Rejecting opaque exposed values (`reject_opaque_exposed_values`)
+
+When a successful result's `exposes` values are serialized into the response body, most values have an
+obvious JSON form (a `String`, a `Hash`, a `Data.define`, …). But an exposed value can be **opaque** —
+it has no JSON rendering *its author declared*, so it falls back to a generic one that leaks Ruby
+internals: a bare object serializes to the string `"#<User:0x000055…>"`, and in a Rails app
+ActiveSupport's generic `as_json` instead dumps the object's instance variables. Concretely, a value is
+opaque when its only `to_s` is the one inherited from `Object` and it defines no `to_h`/`to_hash`/custom
+`as_json` — i.e. it never told the serializer how it wants to look as JSON.
+
+`reject_opaque_exposed_values` decides what happens when that occurs:
+
+- **`true` (default)** — serialization raises `Axn::Reflection::UnserializableValue` (naming the exact
+  path, e.g. `records[3].owner`), which the dispatcher logs and maps to a generic 500 rather than
+  publishing the blob.
+- **`false`** — the opaque rendering ships in the response body.
+
+**This default is the opposite of axn-mcp's**, deliberately. An MCP tool result goes to an LLM, where
+an ugly-but-honest string usually beats a failed call; an OpenAPI response is a *published contract*
+with a declared `output_schema`, and `"#<User:0x…>"` matches no schema and leaks internals to every
+consumer. Same knob, same name, different default per transport.
+
+Hash **keys** are held to the same standard: `serialize_value` renders keys via `#to_s`, so an opaque
+key would become a garbage JSON *property name*.
+
+Set it **gem-wide** (`Axn::OpenAPI.config.reject_opaque_exposed_values = false`) or **per tool** — see
+[Per-tool overrides](#per-tool-overrides) — which lets one legacy endpoint opt out without loosening the
+contract for the whole API.
+
+### Values that are always rejected
+
+`reject_opaque_exposed_values` is narrow: it toggles only the extra "was this rendering
+author-declared?" test. Serialization itself is owned by axn core
+(`Axn::Reflection::Values.serialize_exposed`), which unconditionally refuses values that have no
+**honest** JSON form at all — turning the setting off does **not** buy these back, because the
+alternative is a body `JSON.generate` refuses or one that silently lost data:
+
+- a self-referential container (a cycle has no JSON representation);
+- two Hash keys — or two exposed field names — that stringify to the same JSON property, which would
+  collapse into one and silently drop a value;
+- a non-finite `Float` (`Infinity`/`NaN`), including one reached by coercing a `BigDecimal`/`Rational`
+  — JSON has no literal for them;
+- a `String` whose bytes have no UTF-8 rendering (JSON is a UTF-8 format), whether it came from an
+  exposure, a `Symbol`, or any `#to_s` you wrote.
+
+Each raises `Axn::Reflection::UnserializableValue`, naming the path to the offending value (e.g.
+`records[3].price`), which this gem logs and maps to the generic 500 below.
 
 ## Status codes
 
@@ -252,7 +326,7 @@ find out whether a call succeeded.
 | `404` | Path maps to no registered tool, **or** a known tool at an unregistered version — mount skin only. The latter's message names the latest available version's path | `{"error": {"message": "..."}}` |
 | `405` | Known tool path, wrong HTTP verb — every route is `POST` (mount skin only) | `{"error": {"message": "..."}}` |
 | `422` | A well-formed request the Axn itself refused via `fail!` — "we understood you, but can't complete the operation" | `{"error": {"message": "<the fail! message, verbatim>"}}` |
-| `500` | An unexpected exception, or a `strict_serialization` violation on an otherwise-successful result — generic message, no internal detail leaked | `{"error": {"message": "Internal Server Error"}}` |
+| `500` | An unexpected exception, or an unserializable exposed value on an otherwise-successful result (see [Values that are always rejected](#values-that-are-always-rejected) and `reject_opaque_exposed_values`) — generic message, no internal detail leaked | `{"error": {"message": "Internal Server Error"}}` |
 
 > **Validation → 400, business `fail!` → 422 is intentional, not an oversight.** It runs against the
 > common Rails/FastAPI reflex of "422 = validation failed." Here, `422` keeps its literal RFC 9110

@@ -76,6 +76,49 @@ RSpec.describe Axn::OpenAPI::SpecGenerator do
     Axn::OpenAPI.config.reject_undeclared_inputs = original
   end
 
+  # `reject_undeclared_inputs` is `overridable:`, and the published document must advertise what the
+  # runtime actually enforces for THAT tool — a per-tool override the spec ignored would send generated
+  # clients a payload the mounted API then 400s (or vice versa). Both directions pinned.
+  it "reflects a per-tool reject_undeclared_inputs override in the published schema" do
+    strict = Class.new do
+      include Axn
+
+      configure(:openapi) { |c| c.reject_undeclared_inputs = true }
+      axn_name "strict_tool"
+      expects :message, type: String
+      def call = nil
+    end
+
+    expect(Axn::OpenAPI.config.reject_undeclared_inputs).to be(false)
+    doc = described_class.new(tools: [strict, EchoTool]).generate
+    strict_schema = doc.dig("paths", "/strict_tool/v1", "post", "requestBody", "content", "application/json", "schema")
+    echo_schema = doc.dig("paths", "/echo_tool/v1", "post", "requestBody", "content", "application/json", "schema")
+
+    expect(strict_schema[:additionalProperties]).to be(false)
+    # The gem-wide lenient default still governs every other tool in the same document.
+    expect(echo_schema).not_to have_key(:additionalProperties)
+  end
+
+  it "reflects a per-tool opt-OUT under a strict gem-wide setting" do
+    lenient = Class.new do
+      include Axn
+
+      configure(:openapi) { |c| c.reject_undeclared_inputs = false }
+      axn_name "lenient_tool"
+      expects :message, type: String
+      def call = nil
+    end
+
+    Axn::OpenAPI.config.reject_undeclared_inputs = true
+    doc = described_class.new(tools: [lenient, EchoTool]).generate
+    expect(doc.dig("paths", "/lenient_tool/v1", "post", "requestBody", "content", "application/json",
+                   "schema")).not_to have_key(:additionalProperties)
+    expect(doc.dig("paths", "/echo_tool/v1", "post", "requestBody", "content", "application/json",
+                   "schema")[:additionalProperties]).to be(false)
+  ensure
+    Axn::OpenAPI.config.reject_undeclared_inputs = false
+  end
+
   it "leaves the request schema permissive by default (lenient — no additionalProperties key)" do
     schema = doc.dig("paths", "/echo_tool/v1", "post", "requestBody", "content", "application/json", "schema")
     expect(schema).not_to have_key(:additionalProperties)

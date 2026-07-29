@@ -29,9 +29,136 @@ RSpec.describe Axn::OpenAPI::Dispatcher do
     expect(d.body).to eq("error" => { "message" => "Internal Server Error" })
   end
 
-  it "returns 500 when a successful result is unserializable (strict)" do
+  it "returns 500 when a successful result exposes an opaque value (reject_opaque_exposed_values)" do
     d = dispatch(OpaqueTool, {})
     expect(d.status).to eq(500)
+  end
+
+  # `reject_opaque_exposed_values` is `overridable:`, so it resolves per-tool through the override
+  # store rather than straight off the gem-wide config — matching axn-mcp, where the same knob is
+  # settable per tool. Both directions are pinned: a tool serving a legacy shape can opt out without
+  # loosening the whole API, and a stricter tool can opt in under a lenient default.
+  # The 500 log line is an operator's only pointer to WHY an otherwise-successful call failed, and the
+  # value it reports on is resolved per-tool — so a hint naming only the gem-wide setter is a dead end
+  # whenever a `configure(:openapi)` override is what's in effect. Pinned because that is exactly how it
+  # regressed once: the hint was accurate until the setting became `overridable:`.
+  describe "the opaque-rejection log hint" do
+    # A real Logger over a StringIO rather than a double: axn's own call logger writes :info lines
+    # through this same object, so a verifying double would fail on those instead of on what's asserted.
+    def captured_log_for(axn)
+      io = StringIO.new
+      allow(Axn.config).to receive(:logger).and_return(Logger.new(io))
+      dispatch(axn, {})
+      io.string
+    end
+
+    it "names the offending tool and BOTH config levels, not just the gem-wide setter" do
+      line = captured_log_for(OpaqueTool)
+
+      expect(line).to include("OpaqueTool")                          # which action to go look at
+      expect(line).to include("configure(:openapi)")                 # the per-tool level, which wins
+      expect(line).to include("Axn::OpenAPI.config.reject_opaque_exposed_values") # the gem-wide level
+    end
+
+    it "omits the hint entirely when the rejection cannot be opaque-related" do
+      cyclic = Class.new do
+        include Axn
+
+        configure(:openapi) { |c| c.reject_opaque_exposed_values = false }
+        exposes :items
+        def call
+          a = [1]
+          a << a
+          expose(items: a)
+        end
+      end
+
+      line = captured_log_for(cyclic)
+      expect(line).to include("UnserializableValue")
+      expect(line).not_to include("reject_opaque_exposed_values")
+    end
+  end
+
+  # The runtime half of the pair asserted in spec_generator_spec: a per-tool override must change what
+  # the dispatcher actually enforces, not just what the document advertises.
+  it "honors a per-tool reject_undeclared_inputs override at runtime" do
+    strict = Class.new do
+      include Axn
+
+      configure(:openapi) { |c| c.reject_undeclared_inputs = true }
+      expects :message, type: String
+      exposes :echoed
+      def call = expose(echoed: message)
+    end
+
+    expect(Axn::OpenAPI.config.reject_undeclared_inputs).to be(false)
+    expect(dispatch(strict, { "message" => "hi", "surprise" => 1 }).status).to eq(400)
+    expect(dispatch(strict, { "message" => "hi" }).status).to eq(200)
+  end
+
+  describe "per-tool override via configure(:openapi)" do
+    it "lets a single tool opt out while the gem-wide default stays strict" do
+      lenient = Class.new do
+        include Axn
+
+        configure(:openapi) { |c| c.reject_opaque_exposed_values = false }
+        exposes :thing
+        def call = expose(thing: OpaqueValue.new)
+      end
+
+      expect(Axn::OpenAPI.config.reject_opaque_exposed_values).to be(true)
+      expect(dispatch(lenient, {}).status).to eq(200)
+      # The gem-wide default is untouched for every other tool.
+      expect(dispatch(OpaqueTool, {}).status).to eq(500)
+    end
+
+    it "lets a per-tool true win over a lenient gem-wide setting" do
+      strict = Class.new do
+        include Axn
+
+        configure(:openapi) { |c| c.reject_opaque_exposed_values = true }
+        exposes :thing
+        def call = expose(thing: OpaqueValue.new)
+      end
+
+      Axn::OpenAPI.config.reject_opaque_exposed_values = false
+      expect(dispatch(strict, {}).status).to eq(500)
+      expect(dispatch(OpaqueTool, {}).status).to eq(200)
+    ensure
+      Axn::OpenAPI.config.reject_opaque_exposed_values = true
+    end
+  end
+
+  # Core raises these regardless of reject_opaque, and they are raised where an adapter that skipped
+  # its own pre-pass would otherwise have shipped a broken body. Pinned at the Dispatcher (not just
+  # the Serializer) because the risk of removing the pre-pass was an ESCAPED exception rather than a
+  # wrong status: these must surface as the documented generic 500, not raise out of the Rack app.
+  it "returns 500 (no leak) when exposed Hash keys collapse to one JSON property" do
+    klass = Class.new do
+      include Axn
+
+      exposes :data
+      def call = expose(data: { :id => 1, "id" => 2 })
+    end
+    d = dispatch(klass, {})
+    expect(d.status).to eq(500)
+    expect(d.body).to eq("error" => { "message" => "Internal Server Error" })
+  end
+
+  it "returns 500 (no leak) when a successful result exposes a cyclic container" do
+    klass = Class.new do
+      include Axn
+
+      exposes :items
+      def call
+        a = [1]
+        a << a
+        expose(items: a)
+      end
+    end
+    d = dispatch(klass, {})
+    expect(d.status).to eq(500)
+    expect(d.body).to eq("error" => { "message" => "Internal Server Error" })
   end
 
   it "returns 500 (no leak) when a successful result exposes a non-JSON-encodable number" do

@@ -36,6 +36,8 @@ Gem::Specification.new do |spec|
   spec.executables = spec.files.grep(%r{\Aexe/}) { |f| File.basename(f) }
   spec.require_paths = ["lib"]
 
-  spec.add_dependency "axn", ">= 0.1.0-alpha.4.3", "< 0.2.0"
+  # Floor must exclude any axn whose serialize_exposed predates teamshares/axn#206 (no `reject_opaque:`
+  # keyword — every successful dispatch would 500).
+  spec.add_dependency "axn", ">= 0.1.0-alpha.5", "< 0.2.0"
   spec.add_dependency "rack", ">= 2.2"
 end

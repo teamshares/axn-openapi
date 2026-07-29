@@ -58,4 +58,35 @@ RSpec.describe "axn-openapi inside Rails" do
     get "/api/openapi.json"
     expect(JSON.parse(last_response.body)["servers"]).to eq([{ "url" => "/api" }])
   end
+
+  # Rails-only, and the reason this lives here rather than in spec/: a Rails app loads
+  # ActiveSupport's generic Object#as_json, which dumps instance variables for ANY object. Outside
+  # Rails such a value has no projection at all and renders as an object address; inside Rails it
+  # renders as an ivar dump. `reject_opaque_exposed_values` rejects both, so a Rails consumer gets a 500
+  # rather than a 200 whose body leaks the object's internals and matches no declared schema.
+  describe "an exposed value with no projection of its own" do
+    let(:tool) do
+      Class.new do
+        include Axn
+
+        exposes :thing
+        def call = expose(thing: Class.new { def initialize = @secret = "leaked-ivar" }.new)
+      end
+    end
+
+    it "is a 500 under the default reject_opaque_exposed_values, not a 200 leaking its ivars" do
+      dispatch = Axn::OpenAPI::Dispatcher.call(axn_class: tool, params: {})
+      expect(dispatch.status).to eq(500)
+      expect(dispatch.body).to eq("error" => { "message" => "Internal Server Error" })
+    end
+
+    it "renders ActiveSupport's ivar dump when reject_opaque_exposed_values is off (MCP-style leniency)" do
+      Axn::OpenAPI.config.reject_opaque_exposed_values = false
+      dispatch = Axn::OpenAPI::Dispatcher.call(axn_class: tool, params: {})
+      expect(dispatch.status).to eq(200)
+      expect(dispatch.body).to eq("thing" => { "secret" => "leaked-ivar" })
+    ensure
+      Axn::OpenAPI.config.reject_opaque_exposed_values = true
+    end
+  end
 end
