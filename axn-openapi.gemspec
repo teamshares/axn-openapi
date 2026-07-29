@@ -36,8 +36,9 @@ Gem::Specification.new do |spec|
   spec.executables = spec.files.grep(%r{\Aexe/}) { |f| File.basename(f) }
   spec.require_paths = ["lib"]
 
-  # Floor must exclude any axn whose serialize_exposed predates teamshares/axn#206 (no `reject_opaque:`
-  # keyword — every successful dispatch would 500).
+  # Floor must exclude any axn predating teamshares/axn#206 + #207 — before them there is no
+  # `Axn::Extensions::Serialization.render(reject_opaque:)` to call, so every successful dispatch
+  # would 500. Both land in 0.1.0-alpha.5.
   spec.add_dependency "axn", ">= 0.1.0-alpha.5", "< 0.2.0"
   spec.add_dependency "rack", ">= 2.2"
 end

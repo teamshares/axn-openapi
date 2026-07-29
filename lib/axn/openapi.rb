@@ -77,7 +77,6 @@ module Axn
 end
 
 require_relative "openapi/response"
-require_relative "openapi/serializer"
 require_relative "openapi/dispatch"
 require_relative "openapi/dispatcher"
 require_relative "openapi/request"

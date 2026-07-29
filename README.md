@@ -298,7 +298,7 @@ contract for the whole API.
 
 `reject_opaque_exposed_values` is narrow: it toggles only the extra "was this rendering
 author-declared?" test. Serialization itself is owned by axn core
-(`Axn::Reflection::Values.serialize_exposed`), which unconditionally refuses values that have no
+(`Axn::Extensions::Serialization.render`), which unconditionally refuses values that have no
 **honest** JSON form at all — turning the setting off does **not** buy these back, because the
 alternative is a body `JSON.generate` refuses or one that silently lost data:
 

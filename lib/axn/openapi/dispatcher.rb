@@ -72,7 +72,7 @@ module Axn
       # (it rejects non-finite numbers, non-UTF-8 bytes, cycles, and collapsed property names itself),
       # for two reasons. That guarantee is about values, not about encoder OPTIONS: a structure nested
       # deeper than JSON's max_nesting still raises JSON::NestingError here. And it covers only bodies
-      # core built — a router 404 or a generated spec document never passes through serialize_exposed
+      # core built — a router 404 or a generated spec document never passes through `Serialization.render`
       # at all, and those are exactly the request-derived bodies most likely to carry bad bytes.
       #
       # `SystemStackError` is named explicitly: deep nesting is the failure mode this gate now exists
@@ -86,16 +86,35 @@ module Axn
         Dispatch.new(500, GENERIC_500)
       end
 
+      # The success body is whatever axn core's declared adapter entry point,
+      # Axn::Extensions::Serialization.render, renders — the same call axn-mcp makes. Core derives the
+      # declared `exposes` configs from the result itself, so the body matches the action's reflected
+      # output_schema by construction; there is nothing for this gem to pass in or pick from.
+      #
+      # Core owns every "this value has no honest JSON representation" rejection, raising
+      # Axn::Reflection::UnserializableValue (an ArgumentError) that names the path to the offending
+      # value. Two tiers:
+      #
+      #   * Unconditional — what would render is not JSON at all: a self-referential container, two
+      #     Hash keys (or two exposed field names) that stringify to one property and would silently
+      #     drop a value, a non-finite Float, or a String whose bytes have no UTF-8 rendering.
+      #   * `reject_opaque:` — what would render is honest but not presentable: a value or Hash key
+      #     whose only `to_s` is the inherited Object#to_s, or a value whose only `as_json` is the
+      #     generic one ActiveSupport adds (an instance-variable dump). Shipping `"#<User:0x…>"` or a
+      #     leaked ivar dump in a published HTTP contract is a bug, so this adapter defaults it on;
+      #     axn-mcp leaves it off (its output goes to an LLM, not a published contract).
+      #
+      # This deliberately does NOT pre-walk the value graph to check any of that. It used to, which
+      # meant mirroring core's branch decisions (leaf types, `as_json`-before-`to_h` ordering, key
+      # stringification) from the outside — a prediction that had already drifted from the renderer it
+      # predicted. Only the code doing the rendering can say what the rendering would be.
       def success(axn_class, result)
-        # The one place the adapter's config vocabulary is translated to core's keyword — Serializer
-        # sits adjacent to core's call and speaks core's name for it.
-        #
-        # Resolved via resolve_override_for rather than read off `config`, so a per-tool
-        # `configure(:openapi)` override wins over the gem-wide default (and so a same-named class
-        # method on the action can't silently shadow the override store).
+        # The one place the adapter's config vocabulary is translated to core's keyword. Resolved via
+        # resolve_override_for rather than read off `config`, so a per-tool `configure(:openapi)`
+        # override wins over the gem-wide default (and so a same-named class method on the action
+        # can't silently shadow the override store).
         reject_opaque = Axn::OpenAPI.resolve_override_for(axn_class, :reject_opaque_exposed_values)
-        body = Serializer.serialize(result, axn_class.external_field_configs, reject_opaque:)
-        Dispatch.new(200, body)
+        Dispatch.new(200, Axn::Extensions::Serialization.render(result, reject_opaque:))
       rescue StandardError, SystemStackError => e
         # Serialization itself failed (before we could build a body): a value with no honest JSON
         # representation (core's Axn::Reflection::UnserializableValue, which names the offending
