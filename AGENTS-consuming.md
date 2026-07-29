@@ -102,7 +102,7 @@ bug** (500), not a caller error (400) — the injected context is trusted.
 | `404` | No tool at that path, **or** a known tool at an unregistered version — message names the latest available version's path (mount skin only) | `{"error": {"message"}}` |
 | `405` | Wrong HTTP verb — every tool route is `POST` (mount skin only) | `{"error": {"message"}}` |
 | `422` | The Axn ran and called `fail!` — a well-formed request the operation refused | `{"error": {"message": "<fail! text, verbatim>"}}` |
-| `500` | Unexpected exception, or `strict_serialization` rejecting an unserializable exposed value | `{"error": {"message": "Internal Server Error"}}` (generic, no leak) |
+| `500` | Unexpected exception, or an exposed value with no honest JSON representation (see `reject_opaque`) | `{"error": {"message": "Internal Server Error"}}` (generic, no leak) |
 
 **`fail!` is 422, not 400.** This is deliberate: 400 means "your request was bad" (bad JSON, a
 missing/mistyped field); 422 means "your request was fine, but we couldn't do it" — the literal
@@ -119,7 +119,7 @@ never the reverse.
 | `path_prefix` | `""` | Prefix used when computing spec paths / matching requests (mount skin). |
 | `spec_path` | `"/openapi.json"` | Where the mount skin serves the spec. |
 | `reject_undeclared_inputs` | `false` | `true` → an unknown body key is a 400; `false` → silently ignored. |
-| `strict_serialization` | `true` | `true` → an exposed value with no real JSON projection is a 500 instead of silently `#to_s`-ing an object reference. |
+| `reject_opaque` | `true` | `true` → an exposed value that declares no JSON projection of its own is a 500 instead of rendering an object address (or, in Rails, ActiveSupport's generic `as_json` ivar dump). Does not govern values with no JSON rendering *at all* — a cycle, keys that collapse to one property, a non-finite `Float`, non-UTF-8 bytes — which axn core rejects unconditionally. |
 | `info_title` / `info_version` / `info_description` | `"Axn API"` / `"1.0.0"` / `nil` | OpenAPI `info` block. |
 | `tool_roots` | `%w[agent_tools]` | Directories granting implicit `:openapi` membership. |
 

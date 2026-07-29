@@ -18,7 +18,13 @@ module Axn
 
     # Dispatch behavior.
     setting :reject_undeclared_inputs, default: false
-    setting :strict_serialization, default: true
+
+    # Rejects an exposed value that would render honestly but unpresentably — one whose only `to_s`
+    # is the inherited Object#to_s, or whose only `as_json` is ActiveSupport's generic ivar dump. A
+    # published HTTP contract must not ship `"#<User:0x…>"`. Values that cannot be rendered as JSON
+    # at all (cycles, colliding property names, non-finite Floats, non-UTF-8 bytes) are rejected by
+    # core unconditionally and are not affected by this setting.
+    setting :reject_opaque, default: true
 
     # OpenAPI `info` object (title + version are required by the spec format).
     setting :info_title, default: "Axn API"
@@ -59,7 +65,6 @@ module Axn
 end
 
 require_relative "openapi/response"
-require_relative "openapi/errors"
 require_relative "openapi/serializer"
 require_relative "openapi/dispatch"
 require_relative "openapi/dispatcher"

@@ -233,11 +233,29 @@ Axn::OpenAPI.config.path_prefix = "/axns"
 | `path_prefix` | `""` | Prepended to every tool route when computing the spec's paths and (for the mount skin) when matching an inbound request. Purely cosmetic when mounting — the mount point (`mount ... => "/api"`) already does the real prefixing at the Rack level. |
 | `spec_path` | `"/openapi.json"` | Where the mount skin serves the generated OpenAPI document (`GET`). |
 | `reject_undeclared_inputs` | `false` (lenient) | `false`: unknown top-level body keys are silently ignored (matches JSON Schema's `additionalProperties`-permitted posture; forward-compatible across client/server version skew). `true`: an unknown key fails as a 400, same bucket as any other input-contract violation. A typo on a *required* field always fails regardless of this setting. |
-| `strict_serialization` | `true` (strict) | `true`: an exposed value with no meaningful JSON projection (no own `as_json`/`to_h`, only the inherited `Object#to_s`) is a 500 — shipping `"#<User:0x...>"` in a published HTTP contract is a bug. `false`: falls back to `#to_s`, matching MCP's leniency (output there goes to an LLM, not a strict published contract). |
+| `reject_opaque` | `true` (strict) | `true`: an exposed value that declares no JSON projection of its own is a 500. That means a value (or Hash key) whose only `to_s` is the inherited `Object#to_s`, and — in a Rails app — one whose only `as_json` is ActiveSupport's generic `Object#as_json`. Shipping `"#<User:0x...>"` or an instance-variable dump in a published HTTP contract is a bug. `false`: renders whichever of those Rails/plain-Ruby fallbacks applies, matching MCP's leniency (output there goes to an LLM, not a strict published contract). Values that have no JSON rendering **at all** are rejected regardless of this setting — see below. |
 | `info_title` | `"Axn API"` | OpenAPI `info.title`. |
 | `info_version` | `"1.0.0"` | OpenAPI `info.version`. |
 | `info_description` | `nil` | OpenAPI `info.description`; omitted from the document when nil. |
 | `tool_roots` | `%w[agent_tools]` | Directory roots granting implicit `:openapi` membership (see above). Validated: a broad entry (`app`, `.`, `actions`, a `..` traversal) is rejected. |
+
+### Values that are always rejected
+
+`reject_opaque` governs only values that would render *honestly but unpresentably*. Serialization is
+owned by axn core (`Axn::Reflection::Values.serialize_exposed`), which unconditionally refuses values
+that have no JSON rendering at all — turning `reject_opaque` off does **not** buy these back, because
+the alternative is a body `JSON.generate` refuses or one that silently lost data:
+
+- a self-referential container (a cycle has no JSON representation);
+- two Hash keys — or two exposed field names — that stringify to the same JSON property, which would
+  collapse into one and silently drop a value;
+- a non-finite `Float` (`Infinity`/`NaN`), including one reached by coercing a `BigDecimal`/`Rational`
+  — JSON has no literal for them;
+- a `String` whose bytes have no UTF-8 rendering (JSON is a UTF-8 format), whether it came from an
+  exposure, a `Symbol`, or any `#to_s` you wrote.
+
+Each raises `Axn::Reflection::UnserializableValue`, naming the path to the offending value (e.g.
+`records[3].price`), which this gem logs and maps to the generic 500 below.
 
 ## Status codes
 
@@ -252,7 +270,7 @@ find out whether a call succeeded.
 | `404` | Path maps to no registered tool, **or** a known tool at an unregistered version — mount skin only. The latter's message names the latest available version's path | `{"error": {"message": "..."}}` |
 | `405` | Known tool path, wrong HTTP verb — every route is `POST` (mount skin only) | `{"error": {"message": "..."}}` |
 | `422` | A well-formed request the Axn itself refused via `fail!` — "we understood you, but can't complete the operation" | `{"error": {"message": "<the fail! message, verbatim>"}}` |
-| `500` | An unexpected exception, or a `strict_serialization` violation on an otherwise-successful result — generic message, no internal detail leaked | `{"error": {"message": "Internal Server Error"}}` |
+| `500` | An unexpected exception, or an unserializable exposed value on an otherwise-successful result (see [Values that are always rejected](#values-that-are-always-rejected) and `reject_opaque`) — generic message, no internal detail leaked | `{"error": {"message": "Internal Server Error"}}` |
 
 > **Validation → 400, business `fail!` → 422 is intentional, not an oversight.** It runs against the
 > common Rails/FastAPI reflex of "422 = validation failed." Here, `422` keeps its literal RFC 9110

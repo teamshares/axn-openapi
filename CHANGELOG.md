@@ -10,9 +10,29 @@
   document included, not just `Dispatcher.call`'s. An unencodable body (e.g. invalid UTF-8 from a
   request path) maps to the generic 500 instead of raising out of the renderer. Relatedly, the 404
   "unknown tool" body no longer echoes the raw request path (untrusted, possibly invalid-UTF-8 input).
-- `[BUGFIX]` Strict serialization now rejects a Hash with two distinct keys that stringify to the same
-  JSON property (e.g. `{ id: 1, "id" => 2 }`) — core stringifies keys and would silently collapse
-  them, dropping a value; better a 500 than a 200 that lost data.
+- `[BREAKING]` The `strict_serialization` setting is now **`reject_opaque`** (same `true` default), and
+  every "this exposed value has no honest JSON representation" check is delegated to axn core's
+  `Axn::Reflection::Values.serialize_exposed(reject_opaque:)` (requires axn > 0.1.0-alpha.5). This gem
+  no longer walks the value graph itself — `Serializer` is now a one-line pass-through, and
+  `Axn::OpenAPI::UnserializableExposureError` is **removed** in favor of core's
+  `Axn::Reflection::UnserializableValue` (an `ArgumentError`, which also names the offending field path).
+  Rescue that instead if you referenced the old class. Behavior changes worth noting:
+  - Rejections split into two tiers. `reject_opaque` governs only values that would render *honestly
+    but unpresentably* — a value or Hash key whose only `to_s` is the inherited `Object#to_s`. Values
+    with no JSON rendering **at all** are now rejected regardless of the setting, because the
+    alternative is a body `JSON.generate` refuses or one that silently lost data: a cycle, two Hash
+    keys (or two exposed field names) that collapse to one JSON property, a non-finite `Float`
+    (including via `BigDecimal`/`Rational` coercion), or a `String` whose bytes have no UTF-8
+    rendering. Previously `strict_serialization = false` let several of these through to the encode
+    gate (or, for the collapse case, to a silently-lossy `200`).
+  - **In a Rails app, `reject_opaque` now also rejects a value whose only `as_json` is ActiveSupport's
+    generic `Object#as_json`** (one declaring no `as_json`, `to_h`, or `to_hash` of its own). That
+    generic implementation dumps instance variables, so such a value previously passed strict mode and
+    returned a `200` whose body leaked internals and matched no declared schema; it is now a `500`.
+    Give the value its own `as_json`/`to_h`, or declare it `type: String` and format it.
+  - The "disable with …" pointer moved out of the exception message into the dispatcher's `500` log
+    line: core raises the same error for adapters that have no such setting, so it must not name this
+    gem's config knob.
 - `[BUGFIX]` `Axn::OpenAPI::App` dups + freezes the resolved `path_prefix`, so mutating the source
   String after construction can't drift the prefix captured by the spec provider away from the
   router's route map.
@@ -54,24 +74,29 @@
   with a `400`, instead of silently treating it as `{}` — matching the mount router exactly. Both
   skins now share one body parser (`Dispatcher.parse_body`), so they can't diverge. Previously a tool
   with no required inputs would run and return `200` on garbage input via the controller.
-- `[BUGFIX]` Hardened the serialization path against self-referential (cyclic) Array/Hash values: the
-  strict serializer detects cycles via ancestor-chain tracking (no false positive on shared-but-acyclic
-  references) and rejects them rather than recursing to `SystemStackError`, and the dispatcher's success
-  boundary now also catches `SystemStackError` (which is not a `StandardError`) as a backstop → generic
-  `500`. (Note: a cyclic value exposed by a real Axn currently overflows earlier, inside axn core's
-  call logger during `.call`; fully preventing that is a core-side fix, tracked separately.)
+- `[BUGFIX]` Hardened the serialization path against self-referential (cyclic) Array/Hash values, which
+  would otherwise recurse to `SystemStackError`; the dispatcher's success boundary also catches
+  `SystemStackError` (not a `StandardError`) as a backstop → generic `500`. Cycle detection itself now
+  lives in axn core (see the `reject_opaque` entry below), which additionally guards the case this gem's
+  own walk missed: a projection pointing back at its source (`def to_h = { child: self }`) recursed
+  unboundedly here, because only the `Hash`/`Array` branch was guarded, never the `as_json`/`to_h`
+  source object. Core guards the source object.
 - `[BUGFIX]` Every Axn-derived response body — success exposures **and** the `fail!`/validation
   envelopes — now passes a single JSON-encodability gate in the dispatcher before it's returned, so
   an unencodable body (a non-finite number, or a `String` with invalid UTF-8 such as a `fail!` message
   carrying binary data from an upstream service) maps to the documented generic `500` instead of
   raising mid-render and escaping the Rack app / host framework. Previously only the success body was
-  guarded; a bad `fail!`/validation message would have raised. Works regardless of
-  `strict_serialization` (the strict serializer still runs first for a precise field-level message on
-  garbage-but-valid-JSON `to_s` projections); exceptions raised *during* serialization (projection
-  errors, cycles → `SystemStackError`) are still caught too.
-- `[BUGFIX]` The strict serializer now validates Hash **keys**, not just values: `serialize_value`
-  stringifies keys via `#to_s`, so a key with only the default `Object#to_s` (which would render as
-  garbage like `"#<User:0x…>"`) is now rejected in strict mode, exactly as such a value is.
+  guarded; a bad `fail!`/validation message would have raised. Works regardless of `reject_opaque`;
+  exceptions raised *during* serialization (projection errors, cycles) are still caught too. The gate
+  is retained now that core guarantees no *value* `JSON.generate` refuses, because that is a promise
+  about values rather than about encoder options — a body nested deeper than JSON's `max_nesting`
+  still raises `JSON::NestingError` — and because it also covers bodies core never built, such as a
+  router 404 or the generated spec document.
+- `[BUGFIX]` Hash **keys** are validated, not just values: `serialize_value` stringifies keys via
+  `#to_s`, so a key with only the default `Object#to_s` (which would render as garbage like
+  `"#<User:0x…>"`) is rejected under `reject_opaque`, exactly as such a value is — and two keys that
+  stringify to the same JSON property (e.g. `{ id: 1, "id" => 2 }`) are rejected unconditionally,
+  since stringifying would silently collapse them and drop a value. Both now enforced by axn core.
 - `[BUGFIX]` `SpecGenerator` now derives each operation's `requestBody.required` from the input
   contract (true only when the Axn has a required inbound field) instead of hardcoding `true`. An
   ambient-context-only tool (empty input schema) or an all-optional-input tool is now `required:
@@ -79,7 +104,7 @@
   generated clients no longer reject a request that succeeds at runtime.
 - `[FEAT]` `Axn::OpenAPI` (renamed from the scaffolded `Axn::Openapi`) is now `Axn::Configurable` +
   `Axn::Tools::AdapterRoots`, with settings `path_prefix` (`""`), `spec_path` (`"/openapi.json"`),
-  `reject_undeclared_inputs` (`false`), `strict_serialization` (`true`), `info_title` (`"Axn API"`),
+  `reject_undeclared_inputs` (`false`), `reject_opaque` (`true`), `info_title` (`"Axn API"`),
   `info_version` (`"1.0.0"`), `info_description` (`nil`), and `tool_roots` (`%w[agent_tools]` — an
   Axn under `app/agent_tools/` is served with no explicit `tool :openapi`, matching axn-mcp/
   axn-ruby_llm's convention). Registers `:openapi` as a tool adapter with axn core's process-global
@@ -90,8 +115,8 @@
   `Axn::Result` to an `Axn::OpenAPI::Dispatch` (`Data.define(:status, :body)`) per the approved
   status scheme — 200 on success (serialized via `Serializer`), 400 with `field_errors` on caller
   input-contract violations (`Invoker.input_invalid?`), 422 with the `fail!` message on a business
-  failure, and a generic no-leak 500 on any other exception or on an `UnserializableExposureError`
-  from strict serialization (logged via `Axn.config.logger.error`). `params` top-level keys are
+  failure, and a generic no-leak 500 on any other exception or on an `Axn::Reflection::UnserializableValue`
+  from serialization (logged via `Axn.config.logger.error`). `params` top-level keys are
   symbolized before the Invoker's `**` splat; nested Hashes are passed through as-is.
 - `[FEAT]` `Axn::OpenAPI::Request` (`Data.define(:http_method, :path, :raw_body)`) is a
   Rails-agnostic view of an inbound HTTP request, with `.from_rack(env)` reading and rewinding

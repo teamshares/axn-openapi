@@ -1,9 +1,14 @@
 # frozen_string_literal: true
 
+# The Serializer is a pass-through to Axn::Reflection::Values.serialize_exposed, so the exhaustive
+# per-defect matrix (which values are opaque, how cycles/collisions/non-finite numbers are detected)
+# lives in axn core's own specs — duplicating it here would re-create, in test form, exactly the
+# parallel walk this gem deleted. What is tested here is the seam: that the adapter forwards
+# `reject_opaque` faithfully, and that core's rejections surface as the error the Dispatcher rescues.
 RSpec.describe Axn::OpenAPI::Serializer do
-  def serialize(axn, strict: true)
+  def serialize(axn, reject_opaque: true)
     result = axn.call
-    described_class.serialize(result, axn.external_field_configs, strict:)
+    described_class.serialize(result, axn.external_field_configs, reject_opaque:)
   end
 
   it "serializes scalars via serialize_exposed (schema-aligned)" do
@@ -19,8 +24,34 @@ RSpec.describe Axn::OpenAPI::Serializer do
     expect(out["t"]).to eq("2020-01-02T03:04:05Z")
   end
 
-  it "raises on a value with only the default Object#to_s when strict" do
-    expect { serialize(OpaqueTool) }.to raise_error(Axn::OpenAPI::UnserializableExposureError, /thing/)
+  it "serializes a nested Hash/Array of safe leaves without raising" do
+    klass = Class.new do
+      include Axn
+
+      exposes :data
+      def call = expose(data: { "items" => [1, 2], "when" => Time.utc(2020, 1, 1) })
+    end
+    expect(serialize(klass)["data"]).to eq("items" => [1, 2], "when" => "2020-01-01T00:00:00Z")
+  end
+
+  it "raises core's UnserializableValue on an opaque value when reject_opaque" do
+    expect { serialize(OpaqueTool) }
+      .to raise_error(Axn::Reflection::UnserializableValue, /thing/)
+  end
+
+  it "forwards reject_opaque: false, matching MCP leniency" do
+    expect { serialize(OpaqueTool, reject_opaque: false) }.not_to raise_error
+  end
+
+  it "names the offending field path for a value nested inside a Hash" do
+    klass = Class.new do
+      include Axn
+
+      exposes :data
+      def call = expose(data: { "bad" => OpaqueValue.new })
+    end
+    expect { serialize(klass) }
+      .to raise_error(Axn::Reflection::UnserializableValue, /data\.bad/)
   end
 
   it "allows a value with a meaningful custom to_s" do
@@ -34,85 +65,55 @@ RSpec.describe Axn::OpenAPI::Serializer do
     expect(serialize(klass)["price"]).to eq("$4.00")
   end
 
-  it "never raises when strict is false (mirrors MCP leniency)" do
-    expect { serialize(OpaqueTool, strict: false) }.not_to raise_error
+  # The rejections below are core's UNCONDITIONAL tier — not gated on reject_opaque, because what they
+  # would render is not JSON at all. Asserted with reject_opaque: false precisely to pin that: turning
+  # this gem's leniency knob off must not buy back a body JSON.generate would refuse (or one that
+  # silently dropped a value).
+  it "rejects a self-referential exposure even when reject_opaque is false" do
+    klass = Class.new do
+      include Axn
+
+      exposes :items
+      def call
+        a = [1]
+        a << a
+        expose(items: a)
+      end
+    end
+    expect { serialize(klass, reject_opaque: false) }
+      .to raise_error(Axn::Reflection::UnserializableValue, /self-referential|cycle/i)
   end
 
-  it "serializes a nested Hash/Array of safe leaves without raising" do
+  it "rejects keys that collapse to one JSON property even when reject_opaque is false" do
     klass = Class.new do
       include Axn
 
       exposes :data
-      def call = expose(data: { "items" => [1, 2], "when" => Time.utc(2020, 1, 1) })
+      def call = expose(data: { :id => 1, "id" => 2 })
     end
-    expect(serialize(klass)["data"]).to eq("items" => [1, 2], "when" => "2020-01-01T00:00:00Z")
+    expect { serialize(klass, reject_opaque: false) }
+      .to raise_error(Axn::Reflection::UnserializableValue, /collapse|same JSON property/i)
   end
 
-  it "raises when a value nested inside a Hash is unserializable (strict)" do
+  it "rejects a non-finite Float even when reject_opaque is false" do
     klass = Class.new do
       include Axn
 
-      exposes :data
-      def call = expose(data: { "bad" => OpaqueValue.new })
+      exposes :ratio, type: Float
+      def call = expose(ratio: Float::INFINITY)
     end
-    expect { serialize(klass) }.to raise_error(Axn::OpenAPI::UnserializableExposureError, /data\.bad/)
-  end
-
-  it "raises when a custom to_h returns a structure with an unserializable leaf (strict)" do
-    wrapper = Class.new { def to_h = { inner: OpaqueValue.new } }
-    klass = Class.new do
-      include Axn
-
-      exposes :wrapped
-      define_method(:call) { expose(wrapped: wrapper.new) }
-    end
-    expect { serialize(klass) }.to raise_error(Axn::OpenAPI::UnserializableExposureError, /wrapped\.inner/)
-  end
-
-  it "raises when a nested Hash has a key with only the default Object#to_s (strict)" do
-    klass = Class.new do
-      include Axn
-
-      exposes :data
-      def call = expose(data: { OpaqueValue.new => "v" })
-    end
-    expect { serialize(klass) }.to raise_error(Axn::OpenAPI::UnserializableExposureError, /hash key/i)
-  end
-
-  it "allows a Hash keyed by ordinary scalars (String/Symbol/Integer)" do
-    klass = Class.new do
-      include Axn
-
-      exposes :data
-      def call = expose(data: { :a => 1, "b" => 2, 3 => "c" })
-    end
-    expect { serialize(klass) }.not_to raise_error
-  end
-
-  it "rejects a Hash whose keys stringify to the same property (silent-collapse guard, strict)" do
-    expect { described_class.assert_serializable!({ id: 1, "id" => 2 }, "data") }
-      .to raise_error(Axn::OpenAPI::UnserializableExposureError, /stringify to the same|collapse/i)
-  end
-
-  # These exercise the guard directly (not through a real Axn.call): a cyclic value exposed by a real
-  # Axn overflows earlier, inside axn core's call logger, before the adapter ever serializes — see the
-  # PR discussion. The guard itself must still reject cycles rather than recurse to SystemStackError.
-  it "rejects a self-referential Array (cycle) instead of recursing to SystemStackError" do
-    a = [1]
-    a << a
-    expect { described_class.assert_serializable!(a, "items") }
-      .to raise_error(Axn::OpenAPI::UnserializableExposureError, /self-referential|cycle/i)
-  end
-
-  it "rejects a self-referential Hash (cycle)" do
-    h = {}
-    h["self"] = h
-    expect { described_class.assert_serializable!(h, "data") }
-      .to raise_error(Axn::OpenAPI::UnserializableExposureError, /self-referential|cycle/i)
+    expect { serialize(klass, reject_opaque: false) }
+      .to raise_error(Axn::Reflection::UnserializableValue, /ratio/)
   end
 
   it "does not false-positive on a shared but acyclic reference (diamond)" do
     shared = { "x" => 1 }
-    expect { described_class.assert_serializable!({ "a" => shared, "b" => shared }, "data") }.not_to raise_error
+    klass = Class.new do
+      include Axn
+
+      exposes :data
+      define_method(:call) { expose(data: { "a" => shared, "b" => shared }) }
+    end
+    expect { serialize(klass) }.not_to raise_error
   end
 end

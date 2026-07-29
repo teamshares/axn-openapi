@@ -29,9 +29,41 @@ RSpec.describe Axn::OpenAPI::Dispatcher do
     expect(d.body).to eq("error" => { "message" => "Internal Server Error" })
   end
 
-  it "returns 500 when a successful result is unserializable (strict)" do
+  it "returns 500 when a successful result exposes an opaque value (reject_opaque)" do
     d = dispatch(OpaqueTool, {})
     expect(d.status).to eq(500)
+  end
+
+  # Core raises these regardless of reject_opaque, and they are raised where an adapter that skipped
+  # its own pre-pass would otherwise have shipped a broken body. Pinned at the Dispatcher (not just
+  # the Serializer) because the risk of removing the pre-pass was an ESCAPED exception rather than a
+  # wrong status: these must surface as the documented generic 500, not raise out of the Rack app.
+  it "returns 500 (no leak) when exposed Hash keys collapse to one JSON property" do
+    klass = Class.new do
+      include Axn
+
+      exposes :data
+      def call = expose(data: { :id => 1, "id" => 2 })
+    end
+    d = dispatch(klass, {})
+    expect(d.status).to eq(500)
+    expect(d.body).to eq("error" => { "message" => "Internal Server Error" })
+  end
+
+  it "returns 500 (no leak) when a successful result exposes a cyclic container" do
+    klass = Class.new do
+      include Axn
+
+      exposes :items
+      def call
+        a = [1]
+        a << a
+        expose(items: a)
+      end
+    end
+    d = dispatch(klass, {})
+    expect(d.status).to eq(500)
+    expect(d.body).to eq("error" => { "message" => "Internal Server Error" })
   end
 
   it "returns 500 (no leak) when a successful result exposes a non-JSON-encodable number" do
