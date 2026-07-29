@@ -12,7 +12,10 @@
   "unknown tool" body no longer echoes the raw request path (untrusted, possibly invalid-UTF-8 input).
 - `[BREAKING]` The `strict_serialization` setting is now **`reject_opaque`** (same `true` default), and
   every "this exposed value has no honest JSON representation" check is delegated to axn core's
-  `Axn::Reflection::Values.serialize_exposed(reject_opaque:)` (requires axn > 0.1.0-alpha.5). This gem
+  `Axn::Reflection::Values.serialize_exposed(reject_opaque:)`, which requires axn including
+  [teamshares/axn#206](https://github.com/teamshares/axn/pull/206) — the gemspec floor is raised to
+  `>= 0.1.0-alpha.5` accordingly (that PR merged after the alpha.5 release commit without a version
+  bump, and alpha.5 was never published, so this excludes every published axn that lacks it). This gem
   no longer walks the value graph itself — `Serializer` is now a one-line pass-through, and
   `Axn::OpenAPI::UnserializableExposureError` is **removed** in favor of core's
   `Axn::Reflection::UnserializableValue` (an `ArgumentError`, which also names the offending field path).
