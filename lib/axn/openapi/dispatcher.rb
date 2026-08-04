@@ -92,8 +92,8 @@ module Axn
       # output_schema by construction; there is nothing for this gem to pass in or pick from.
       #
       # Core owns every "this value has no honest JSON representation" rejection, raising
-      # Axn::Reflection::UnserializableValue (an ArgumentError) that names the path to the offending
-      # value. Two tiers:
+      # Axn::Extensions::Serialization::UnserializableValue (an ArgumentError) that names the path to
+      # the offending value. Two tiers:
       #
       #   * Unconditional — what would render is not JSON at all: a self-referential container, two
       #     Hash keys (or two exposed field names) that stringify to one property and would silently
@@ -117,9 +117,9 @@ module Axn
         Dispatch.new(200, Axn::Extensions::Serialization.render(result, reject_opaque:))
       rescue StandardError, SystemStackError => e
         # Serialization itself failed (before we could build a body): a value with no honest JSON
-        # representation (core's Axn::Reflection::UnserializableValue, which names the offending
-        # field path), or an exception raised by a value's own as_json/to_h projection. A server-side
-        # problem, not a 200 → generic 500.
+        # representation (core's Axn::Extensions::Serialization::UnserializableValue, which names the
+        # offending field path), or an exception raised by a value's own as_json/to_h projection. A
+        # server-side problem, not a 200 → generic 500.
         #
         # SystemStackError is still named even though core now cycle-guards its own walk: `result` is
         # arbitrary user code, and an as_json/to_h projection is free to recurse on its own. It is not

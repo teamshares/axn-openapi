@@ -218,7 +218,7 @@ convention `axn-mcp`/`axn-ruby_llm` use:
 - **`tool except: :openapi`** — keeps a directory grant but removes `:openapi`. `tool false` opts
   out of every adapter.
 
-`Axn::OpenAPI.tools` (`Axn.tools_for(:openapi, all_versions: true)`) enumerates the current
+`Axn::OpenAPI.tools` (`Axn::Tools.for(:openapi, all_versions: true)`) enumerates the current
 membership across every declared version of each tool — the default source for `.app`/`.spec`
 when you don't pass an explicit `tools:` list.
 
@@ -277,9 +277,10 @@ opaque when its only `to_s` is the one inherited from `Object` and it defines no
 
 `reject_opaque_exposed_values` decides what happens when that occurs:
 
-- **`true` (default)** — serialization raises `Axn::Reflection::UnserializableValue` (naming the exact
-  path, e.g. `records[3].owner`), which the dispatcher logs and maps to a generic 500 rather than
-  publishing the blob.
+- **`true` (default)** — serialization raises
+  `Axn::Extensions::Serialization::UnserializableValue` (naming the exact path, e.g.
+  `records[3].owner`), which the dispatcher logs and maps to a generic 500 rather than publishing
+  the blob.
 - **`false`** — the opaque rendering ships in the response body.
 
 **This default is the opposite of axn-mcp's**, deliberately. An MCP tool result goes to an LLM, where
@@ -310,8 +311,8 @@ alternative is a body `JSON.generate` refuses or one that silently lost data:
 - a `String` whose bytes have no UTF-8 rendering (JSON is a UTF-8 format), whether it came from an
   exposure, a `Symbol`, or any `#to_s` you wrote.
 
-Each raises `Axn::Reflection::UnserializableValue`, naming the path to the offending value (e.g.
-`records[3].price`), which this gem logs and maps to the generic 500 below.
+Each raises `Axn::Extensions::Serialization::UnserializableValue`, naming the path to the offending
+value (e.g. `records[3].price`), which this gem logs and maps to the generic 500 below.
 
 ## Status codes
 

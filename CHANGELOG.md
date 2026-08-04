@@ -2,12 +2,25 @@
 
 ## Unreleased
 
+- `[FEAT]` `Axn::OpenAPI::Error` now `include`s `Axn::Error`, core's public-error boundary marker
+  (axn [#216](https://github.com/teamshares/axn/pull/216) / PRO-2997), so a caller wrapping a mount
+  or a `render_axn` call catches axn's errors and this adapter's with one `rescue Axn::Error`.
+  `Axn::Error` is a module, not a base class, so the ancestry is unchanged — `Axn::OpenAPI::Error`
+  is still a `StandardError` and anything already rescuing that keeps working. The tag is inherited,
+  so subclasses are covered too. Requires an axn that has #216.
+- `[INTERNAL]` Tracks axn core's tool-surface move in
+  [#213](https://github.com/teamshares/axn/pull/213) / PRO-3005: `Axn.tools_for` → `Axn::Tools.for`
+  and `Axn.register_tool_adapter` → `Axn::Tools.register_adapter`. Core ships no aliases, so this
+  gem now requires an axn that has #213. No public surface of this gem changes —
+  `Axn::OpenAPI.tools` still returns every declared version of every registered `:openapi` tool, and
+  registration still happens at load. If you called `Axn.tools_for(:openapi, ...)` directly, call
+  `Axn::Tools.for(:openapi, ...)` instead.
 - `[INTERNAL]` Success bodies now render through axn core's declared adapter entry point,
   `Axn::Extensions::Serialization.render(result, reject_opaque:)` — see axn
   [#207](https://github.com/teamshares/axn/pull/207) / PRO-2992, which made
-  `Axn::Reflection::Values.serialize_exposed` private and derives the declared `exposes` configs from
-  the result itself, so there is no `field_configs` argument to pass. No behavior change: the same code
-  renders the same bodies and raises the same `Axn::Reflection::UnserializableValue`. With
+  the old `serialize_exposed` private and derives the declared `exposes` configs from the result
+  itself, so there is no `field_configs` argument to pass. No behavior change: the same code renders
+  the same bodies and raises the same `Axn::Extensions::Serialization::UnserializableValue`. With
   `field_configs` gone, `Axn::OpenAPI::Serializer` had nothing left to do that core's facade wasn't
   already doing under a better name, so the module is **removed** and `Dispatcher#success` calls
   `render` directly. It was public but undocumented (the README documents the *setting*, never the

@@ -6,6 +6,6 @@ RSpec.describe "openapi adapter registration" do
   end
 
   it "enumerates explicitly-declared :openapi tools" do
-    expect(Axn.tools_for(:openapi)).to include(EchoTool, RefuseTool)
+    expect(Axn::Tools.for(:openapi)).to include(EchoTool, RefuseTool)
   end
 end
