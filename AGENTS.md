@@ -13,8 +13,12 @@ Before writing or modifying an Axn action (`include Axn`): run `bundle show axn`
 - TDD: failing test first.
 - Works outside Rails — guard `Rails`/`ActiveRecord`/`ActiveJob` references with `defined?(...)`.
 - Before done: `bundle exec rake` runs the Rails-free specs + rubocop; run `bundle exec rake verify` to also run the Rails dummy-app suite (`spec_rails`) — required for any Rails-affecting change.
-- `axn` is pinned to `branch: "main"` in the Gemfile; `Gemfile.lock` is gitignored and CI resolves
-  fresh. Re-run tests after `bundle update axn` if it may have moved.
+- `axn` comes from RubyGems, resolved by the gemspec constraint (`>= 0.1.0-alpha.5`, `< 0.2.0`) — no
+  git pin. `Gemfile.lock` is gitignored and CI resolves fresh, so a new axn prerelease lands the
+  moment it publishes; re-run tests after `bundle update axn`. When you need an unreleased axn
+  change, prefer a temporary local override (`bundle config set --local local.axn <path>`, which
+  needs a git source in the Gemfile) over committing a git pin, and raise the gemspec floor once the
+  change ships.
 - Working docs (planning specs/plans, design notes) go in `internal-docs/`. Reserve top-level
   `docs/` for user-facing documentation (a hosted site). The gem packages only `lib/` + root docs
   (README/CHANGELOG/LICENSE), so neither `internal-docs/` nor `docs/` ships — the README is the

@@ -7,11 +7,12 @@
   or a `render_axn` call catches axn's errors and this adapter's with one `rescue Axn::Error`.
   `Axn::Error` is a module, not a base class, so the ancestry is unchanged — `Axn::OpenAPI::Error`
   is still a `StandardError` and anything already rescuing that keeps working. The tag is inherited,
-  so subclasses are covered too. Requires an axn that has #216.
+  so subclasses are covered too. Shipped in axn `0.1.0-alpha.5`, this gem's dependency floor.
 - `[INTERNAL]` Tracks axn core's tool-surface move in
   [#213](https://github.com/teamshares/axn/pull/213) / PRO-3005: `Axn.tools_for` → `Axn::Tools.for`
   and `Axn.register_tool_adapter` → `Axn::Tools.register_adapter`. Core ships no aliases, so this
-  gem now requires an axn that has #213. No public surface of this gem changes —
+  gem raises at `require` time below its axn floor of `0.1.0-alpha.5`. No public surface of this gem
+  changes —
   `Axn::OpenAPI.tools` still returns every declared version of every registered `:openapi` tool, and
   registration still happens at load. If you called `Axn.tools_for(:openapi, ...)` directly, call
   `Axn::Tools.for(:openapi, ...)` instead.
