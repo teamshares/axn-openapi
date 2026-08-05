@@ -2,12 +2,26 @@
 
 ## Unreleased
 
+- `[FEAT]` `Axn::OpenAPI::Error` now `include`s `Axn::Error`, core's public-error boundary marker
+  (axn [#216](https://github.com/teamshares/axn/pull/216) / PRO-2997), so a caller wrapping a mount
+  or a `render_axn` call catches axn's errors and this adapter's with one `rescue Axn::Error`.
+  `Axn::Error` is a module, not a base class, so the ancestry is unchanged — `Axn::OpenAPI::Error`
+  is still a `StandardError` and anything already rescuing that keeps working. The tag is inherited,
+  so subclasses are covered too. Shipped in axn `0.1.0-alpha.5`, this gem's dependency floor.
+- `[INTERNAL]` Tracks axn core's tool-surface move in
+  [#213](https://github.com/teamshares/axn/pull/213) / PRO-3005: `Axn.tools_for` → `Axn::Tools.for`
+  and `Axn.register_tool_adapter` → `Axn::Tools.register_adapter`. Core ships no aliases, so this
+  gem raises at `require` time below its axn floor of `0.1.0-alpha.5`. No public surface of this gem
+  changes —
+  `Axn::OpenAPI.tools` still returns every declared version of every registered `:openapi` tool, and
+  registration still happens at load. If you called `Axn.tools_for(:openapi, ...)` directly, call
+  `Axn::Tools.for(:openapi, ...)` instead.
 - `[INTERNAL]` Success bodies now render through axn core's declared adapter entry point,
   `Axn::Extensions::Serialization.render(result, reject_opaque:)` — see axn
   [#207](https://github.com/teamshares/axn/pull/207) / PRO-2992, which made
-  `Axn::Reflection::Values.serialize_exposed` private and derives the declared `exposes` configs from
-  the result itself, so there is no `field_configs` argument to pass. No behavior change: the same code
-  renders the same bodies and raises the same `Axn::Reflection::UnserializableValue`. With
+  the old `serialize_exposed` private and derives the declared `exposes` configs from the result
+  itself, so there is no `field_configs` argument to pass. No behavior change: the same code renders
+  the same bodies and raises the same `Axn::Extensions::Serialization::UnserializableValue`. With
   `field_configs` gone, `Axn::OpenAPI::Serializer` had nothing left to do that core's facade wasn't
   already doing under a better name, so the module is **removed** and `Dispatcher#success` calls
   `render` directly. It was public but undocumented (the README documents the *setting*, never the
@@ -33,8 +47,8 @@
   `configure(:openapi) { |c| c.reject_opaque_exposed_values = false }` without loosening the whole API,
   and the per-class value wins over the gem-wide one. This gem no longer walks the value graph itself, and
   `Axn::OpenAPI::UnserializableExposureError` is **removed** in favor of core's
-  `Axn::Reflection::UnserializableValue` (an `ArgumentError`, which also names the offending field path).
-  Rescue that instead if you referenced the old class. Behavior changes worth noting:
+  `Axn::Extensions::Serialization::UnserializableValue` (an `ArgumentError`, which also names the
+  offending field path). Rescue that instead if you referenced the old class. Behavior changes worth noting:
   - Rejections split into two tiers. `reject_opaque_exposed_values` governs only values that would
     render *honestly but unpresentably* — a value or Hash key whose only `to_s` is the inherited
     `Object#to_s`, or (in Rails) whose only `as_json` is ActiveSupport's generic one. Values
@@ -136,7 +150,7 @@
   `info_version` (`"1.0.0"`), `info_description` (`nil`), and `tool_roots` (`%w[agent_tools]` — an
   Axn under `app/agent_tools/` is served with no explicit `tool :openapi`, matching axn-mcp/
   axn-ruby_llm's convention). Registers `:openapi` as a tool adapter with axn core's process-global
-  registry (`Axn.register_tool_adapter(:openapi, self)`), so `Axn.tools_for(:openapi)` enumerates
+  registry (`Axn::Tools.register_adapter(:openapi, self)`), so `Axn::Tools.for(:openapi)` enumerates
   directory-root and explicitly-declared (`tool :openapi`) tools.
 - `[FEAT]` `Axn::OpenAPI::Dispatcher.call(axn_class:, params:, ambient_context: {})` is the spine all
   skins delegate to: it runs the Axn through core's `Axn::Tools::Invoker` and maps the returned
@@ -144,8 +158,9 @@
   status scheme — 200 on success (body rendered by core's `Axn::Extensions::Serialization.render`),
   400 with `field_errors` on caller
   input-contract violations (`Invoker.input_invalid?`), 422 with the `fail!` message on a business
-  failure, and a generic no-leak 500 on any other exception or on an `Axn::Reflection::UnserializableValue`
-  from serialization (logged via `Axn.config.logger.error`). `params` top-level keys are
+  failure, and a generic no-leak 500 on any other exception or on an
+  `Axn::Extensions::Serialization::UnserializableValue` from serialization (logged via
+  `Axn.config.logger.error`). `params` top-level keys are
   symbolized before the Invoker's `**` splat; nested Hashes are passed through as-is.
 - `[FEAT]` `Axn::OpenAPI::Request` (`Data.define(:http_method, :path, :raw_body)`) is a
   Rails-agnostic view of an inbound HTTP request, with `.from_rack(env)` reading and rewinding
@@ -181,7 +196,7 @@
   parse-error envelope like `Router` does), delegates straight to `Dispatcher.call` (bypassing
   `Router` entirely since the controller owns routing), and renders `render json: dispatch.body,
   status: dispatch.status`. The module itself references no Rails constants at load time.
-- `[FEAT]` Module-level facade: `Axn::OpenAPI.tools` (`Axn.tools_for(:openapi, all_versions: true)`), `Axn::OpenAPI.app(
+- `[FEAT]` Module-level facade: `Axn::OpenAPI.tools` (`Axn::Tools.for(:openapi, all_versions: true)`), `Axn::OpenAPI.app(
   tools: nil, context: nil, path_prefix: nil, spec_path: nil)` (builds an `App` over `tools:` or
   every registered tool), and `Axn::OpenAPI.spec(tools: nil, path_prefix: nil, info: nil)` (builds a
   `SpecGenerator` and calls `#generate`) — the one-liner public entry points that tie `App` and
@@ -194,7 +209,7 @@
   tool→path map, ordered by `tool_name(:openapi)` then ascending `tool_version` (undeclared version
   defaults to `1`): one `Axn::OpenAPI::RouteEntry` (`Data.define(:path, :axn, :operation_id)`) per
   tool version, with `path` = `"#{path_prefix}/#{tool_name}/v#{tool_version}"` and `operation_id` =
-  `"#{tool_name}_v#{tool_version}"`. `Axn::OpenAPI.tools` now returns `Axn.tools_for(:openapi,
+  `"#{tool_name}_v#{tool_version}"`. `Axn::OpenAPI.tools` now returns `Axn::Tools.for(:openapi,
   all_versions: true)` (every declared version of each tool) instead of the latest-per-tool_name
   view, so a stable HTTP contract can eventually address every version at its own path. This task is
   additive scaffolding — `Router` and `SpecGenerator` don't consume `RouteTable` yet.
@@ -241,7 +256,7 @@
   existing version's path. Stale example paths (`/approve_loan` → `/approve_loan/v1`) updated
   throughout.
 - `[BUGFIX]` `Axn::OpenAPI::App.new` with no explicit `tools:` now defaults to `Axn::OpenAPI.tools`
-  (all versions of every registered tool) instead of `Axn.tools_for(:openapi)` (latest version
+  (all versions of every registered tool) instead of `Axn::Tools.for(:openapi)` (latest version
   only). The old default meant `mount Axn::OpenAPI::App.new => "/api"` silently served only the
   newest version of any multi-version tool — the exact drift this gem's versioned-URL scheme
   exists to prevent.

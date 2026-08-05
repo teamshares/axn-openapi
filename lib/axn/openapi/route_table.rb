@@ -12,7 +12,7 @@ module Axn
     module RouteTable
       module_function
 
-      # `tools` is the all-versions enumeration (Axn.tools_for(:openapi, all_versions: true)) or any
+      # `tools` is the all-versions enumeration (Axn::Tools.for(:openapi, all_versions: true)) or any
       # explicit list. Deterministic order: by tool_name, then ascending tool_version.
       def build(tools:, path_prefix:)
         prefix = path_prefix.to_s
