@@ -89,6 +89,26 @@ RSpec.describe Axn::OpenAPI::Dispatcher do
     expect(d.status).to eq(500)
   end
 
+  # Cutting over to Axn::Tools::AdapterSerialization#guard_tool_response (PRO-2996) is a deliberate
+  # behavior addition for this gem: previously a failed success-serialization only logged (see the
+  # opaque-rejection log hint block below) and never reported through Axn.config.on_exception or
+  # honored raises_in_dev?, unlike every other guarded step in axn. These two pin that addition.
+  it "reports a success-serialization failure through Axn.config.on_exception (PRO-2996)" do
+    reported = []
+    allow(Axn.config).to receive(:on_exception) { |e, **| reported << e }
+
+    dispatch(OpaqueTool, {})
+
+    expect(reported.size).to eq(1)
+    expect(reported.first).to be_a(Axn::Extensions::Serialization::UnserializableValue)
+  end
+
+  it "re-raises a success-serialization failure instead of returning a 500 when raises_in_dev? is true" do
+    allow(Axn::Extensions).to receive(:raises_in_dev?).and_return(true)
+
+    expect { dispatch(OpaqueTool, {}) }.to raise_error(Axn::Extensions::Serialization::UnserializableValue)
+  end
+
   # `reject_opaque_exposed_values` is `overridable:`, so it resolves per-tool through the override
   # store rather than straight off the gem-wide config — matching axn-mcp, where the same knob is
   # settable per tool. Both directions are pinned: a tool serving a legacy shape can opt out without

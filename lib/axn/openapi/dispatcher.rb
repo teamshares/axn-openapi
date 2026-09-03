@@ -87,9 +87,10 @@ module Axn
       end
 
       # The success body is whatever axn core's declared adapter entry point,
-      # Axn::Extensions::Serialization.render, renders — the same call axn-mcp makes. Core derives the
-      # declared `exposes` configs from the result itself, so the body matches the action's reflected
-      # output_schema by construction; there is nothing for this gem to pass in or pick from.
+      # Axn::OpenAPI.serialize_exposed (Axn::Tools::AdapterSerialization, PRO-2996), renders — the same
+      # resolve-then-render chain axn-mcp uses. Core derives the declared `exposes` configs from the
+      # result itself, so the body matches the action's reflected output_schema by construction; there
+      # is nothing for this gem to pass in or pick from.
       #
       # Core owns every "this value has no honest JSON representation" rejection, raising
       # Axn::Extensions::Serialization::UnserializableValue (an ArgumentError) that names the path to
@@ -108,34 +109,36 @@ module Axn
       # meant mirroring core's branch decisions (leaf types, `as_json`-before-`to_h` ordering, key
       # stringification) from the outside — a prediction that had already drifted from the renderer it
       # predicted. Only the code doing the rendering can say what the rendering would be.
+      #
+      # Wrapped in `Axn::OpenAPI.guard_tool_response` (same mixin) rather than a bare rescue: this is a
+      # deliberate behavior addition over the old hand-rolled rescue, not a no-op refactor. A failed
+      # success-serialization now ALSO reports through Axn.config.on_exception (it didn't before — a
+      # tool serialization bug used to be visible only in the logger, unlike every other guarded step
+      # in axn) and re-raises when Axn::Extensions.raises_in_dev? instead of always 500ing, so a real
+      # bug surfaces loudly in development rather than being silently masked.
       def success(axn_class, result)
-        # The one place the adapter's config vocabulary is translated to core's keyword. Resolved via
-        # resolve_override_for rather than read off `config`, so a per-tool `configure(:openapi)`
-        # override wins over the gem-wide default (and so a same-named class method on the action
-        # can't silently shadow the override store).
+        Axn::OpenAPI.guard_tool_response(axn_class, on_error: ->(e) { failed_success_response(axn_class, e) }) do
+          Dispatch.new(200, Axn::OpenAPI.serialize_exposed(result))
+        end
+      end
+
+      # The on_error branch of the guard above: builds the same generic 500 + operator hint the old
+      # rescue logged, independently re-resolving `reject_opaque` here since the guard hands us only
+      # the exception, not the resolved value it was rendered with.
+      #
+      # The config pointer lives HERE rather than in the exception message: core raises the same error
+      # for adapters that have no such setting, so it must not name this gem's config knob. An
+      # operator reads this line, which is the one place that knows both the error and the knob.
+      #
+      # It names the TOOL and BOTH levels, never just the gem-wide setter. The value is resolved
+      # per-tool, so a `configure(:openapi)` override on this action beats `config` — pointing an
+      # operator at the gem-wide setting would be a dead end whenever the override is what's in
+      # effect (worst case: the gem-wide value is already `false`, so following the advice changes
+      # nothing and the endpoint keeps 500ing). Core exposes no way to ask which level supplied a
+      # resolved value — `resolve_override_for` collapses override and fallback — so the honest hint
+      # describes both and lets the operator look at the one action it names.
+      def failed_success_response(axn_class, e)
         reject_opaque = Axn::OpenAPI.resolve_override_for(axn_class, :reject_opaque_exposed_values)
-        Dispatch.new(200, Axn::Extensions::Serialization.render(result, reject_opaque:))
-      rescue StandardError, SystemStackError => e
-        # Serialization itself failed (before we could build a body): a value with no honest JSON
-        # representation (core's Axn::Extensions::Serialization::UnserializableValue, which names the
-        # offending field path), or an exception raised by a value's own as_json/to_h projection. A
-        # server-side problem, not a 200 → generic 500.
-        #
-        # SystemStackError is still named even though core now cycle-guards its own walk: `result` is
-        # arbitrary user code, and an as_json/to_h projection is free to recurse on its own. It is not
-        # a StandardError, so it would otherwise escape the Rack app / controller.
-        #
-        # The config pointer lives HERE rather than in the exception message: core raises the same error
-        # for adapters that have no such setting, so it must not name this gem's config knob. An
-        # operator reads this line, which is the one place that knows both the error and the knob.
-        #
-        # It names the TOOL and BOTH levels, never just the gem-wide setter. The value is resolved
-        # per-tool, so a `configure(:openapi)` override on this action beats `config` — pointing an
-        # operator at the gem-wide setting would be a dead end whenever the override is what's in
-        # effect (worst case: the gem-wide value is already `false`, so following the advice changes
-        # nothing and the endpoint keeps 500ing). Core exposes no way to ask which level supplied a
-        # resolved value — `resolve_override_for` collapses override and fallback — so the honest hint
-        # describes both and lets the operator look at the one action it names.
         hint = if reject_opaque
                  " (if this is an opaque-value rejection: reject_opaque_exposed_values resolved true for " \
                    "#{axn_class} — unset it on the action via `configure(:openapi)`, or gem-wide via " \
