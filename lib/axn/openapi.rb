@@ -9,6 +9,7 @@ module Axn
   module OpenAPI
     extend Axn::Configurable
     extend Axn::Tools::AdapterRoots
+    extend Axn::Tools::AdapterSerialization
 
     config_namespace :openapi
 
@@ -37,7 +38,7 @@ module Axn
     # Named to match axn-mcp's identical knob, so one concept has one name across the adapter family.
     # `overridable` for the same reason: a single tool serving a legacy shape can opt out via
     # `configure(:openapi) { |c| c.reject_opaque_exposed_values = false }` without loosening the API.
-    setting :reject_opaque_exposed_values, default: true, one_of: [true, false], overridable: true
+    declare_reject_opaque_exposed_values! default: true
 
     # OpenAPI `info` object (title + version are required by the spec format).
     setting :info_title, default: "Axn API"
@@ -46,7 +47,7 @@ module Axn
 
     # Directory-root membership: an Axn under app/agent_tools/ is served without an explicit
     # `tool :openapi` — same default root as axn-mcp/axn-ruby_llm, so one tool serves everywhere.
-    setting :tool_roots, default: %w[agent_tools], validate: ->(v) { Axn::Tools::AdapterRoots.validate!(v) }
+    tool_roots_default %w[agent_tools]
 
     # This gem's error root. `include Axn::Error` (a marker module, so the StandardError ancestry is
     # untouched) puts it inside core's public-error boundary: one `rescue Axn::Error` catches axn's

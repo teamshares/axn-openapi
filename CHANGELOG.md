@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- `[INTERNAL]` Cuts over to axn core's `Axn::Tools::AdapterSerialization` mixin (PRO-2996, shipped in
+  `0.1.0-alpha.6`, which the gemspec floor is raised to accordingly). `declare_reject_opaque_exposed_values!
+  default: true` replaces the hand-rolled `setting :reject_opaque_exposed_values, ...` (still `true`
+  gem-wide, still `overridable:` — this gem's default stays the odd one out vs. axn-mcp/axn-ruby_llm's
+  `false`), `tool_roots_default %w[agent_tools]` replaces the hand-rolled `setting :tool_roots, ...`
+  (same default, same `Axn::Tools::AdapterRoots.validate!` broad-path guard), and `Dispatcher#success`
+  now renders via `Axn::OpenAPI.serialize_exposed(result)` instead of resolving the override and calling
+  `Axn::Extensions::Serialization.render` itself. No public API changes and no behavior change on their
+  own — same settings, same defaults, same resolve-then-render chain, just the shared implementation
+  every tool-adapter gem was duplicating. See the `[FEAT]` entry below for the one deliberate behavior
+  change this cutover enables.
+- `[FEAT]` A failed success-serialization (an exposed value with no honest JSON representation, or an
+  exception raised by a value's own `as_json`/`to_h` projection) now reports through
+  `Axn.config.on_exception` and re-raises instead of returning a 500 when
+  `Axn::Extensions.raises_in_dev?` is true — matching how every other guarded step in axn behaves.
+  Previously this gem's dispatcher was the one adapter that swallowed this failure into a log line and
+  a generic 500 with no `on_exception` report and no dev-loud raise, regardless of environment; that gap
+  is exactly the defect class PRO-2996's acceptance criteria calls out (every adapter's tool-response
+  guard must report + honor `raises_in_dev?`), so treat this as a bugfix if you'd rather file it there.
+  Comes from routing `Dispatcher#success`'s render step through
+  `Axn::OpenAPI.guard_tool_response` (the same `Axn::Tools::AdapterSerialization` mixin) instead of a
+  bare `rescue`. The response shape is unchanged (still a generic 500 with the same operator log hint
+  outside of dev), and the separate `#ensure_encodable` guard over the final `JSON.generate` re-encode
+  step is untouched — it covers a different failure point and still only logs.
 - `[FEAT]` `Axn::OpenAPI::Error` now `include`s `Axn::Error`, core's public-error boundary marker
   (axn [#216](https://github.com/teamshares/axn/pull/216) / PRO-2997), so a caller wrapping a mount
   or a `render_axn` call catches axn's errors and this adapter's with one `rescue Axn::Error`.
