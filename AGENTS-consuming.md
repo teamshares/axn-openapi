@@ -96,9 +96,10 @@ end
 - **Redaction.** Mark secret exposures and inputs on your tool `sensitive: true`. The gem redacts
   only its own gate.
 - **Mounts.** `tool openapi: { mount: :credentials }` binds a tool to
-  `Axn::OpenAPI.app(mount: :credentials, …)` and keeps it off every other mount. Serving one tool
-  from two mounts raises at boot, and so does building one mount twice from different places. Keep restricted tools **out of `app/agent_tools/`**: that root is
-  shared with axn-mcp and axn-ruby_llm.
+  `Axn::OpenAPI.app(mount: :credentials, …)` and keeps it off every other mount. Listing it in
+  another mount's explicit `tools:` raises at boot. That declaration is the whole isolation guarantee
+  (there is no registry of built mounts). Keep restricted tools **out of `app/agent_tools/`**: that
+  root is shared with axn-mcp and axn-ruby_llm.
 - **Observability.** The gate runs as Axns (`Axn::OpenAPI::Authenticate` / `Authorize`), so 401s and
   403s emit `axn.call` with `reason`/`mount`/`principal`, and everything is stamped
   `invoked_via: openapi`. Record audit detail with `tag`/`dimension` on the tool itself.
@@ -177,7 +178,7 @@ Axn::OpenAPI.spec(mount: nil, tools: nil, auth: nil, authorize: nil, info: nil, 
 - `lib/axn/openapi/router.rb` — the mount skin's HTTP-layer routing (404/403/405/400-parse).
 - `lib/axn/openapi/app.rb` — the mount: auth before routing, build-time policy checks.
 - `lib/axn/openapi/gate.rb` — the `Authenticate`/`Authorize` Axns; `lib/axn/openapi/auth.rb` — strategy
-  normalization + OpenAPI security-scheme mapping; `lib/axn/openapi/mounts.rb` — one-tool-one-mount registry.
+  normalization + OpenAPI security-scheme mapping.
 - `lib/axn/openapi/spec_generator.rb` — OpenAPI 3.1 assembly from reflection.
 - `internal-docs/specs/2026-07-18-axn-openapi-design.md` — the full design rationale (not shipped
   with the gem; read from a checkout).

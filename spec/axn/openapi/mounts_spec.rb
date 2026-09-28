@@ -28,71 +28,11 @@ RSpec.describe "mounts" do
       expect { Axn::OpenAPI.app(auth: :none, mount: :adhoc, tools: [CalcV1Tool]) }.not_to raise_error
     end
 
-    it "refuses serving one tool from two different mounts" do
-      Axn::OpenAPI.app(auth: :none, mount: :adhoc, tools: [EchoTool])
-      expect { Axn::OpenAPI.app(auth: :none) }
-        .to raise_error(Axn::OpenAPI::Error, /EchoTool.*mount :adhoc.*default mount/)
-    end
-
-    it "lets a rebuild of the same mount from the same place replace its claim (Rails route reloading)" do
-      build = ->(tools) { Axn::OpenAPI.app(auth: :none, mount: :adhoc, tools:) }
-      [[EchoTool], [RefuseTool]].each { |tools| build.call(tools) }
-      expect { Axn::OpenAPI.app(auth: :none, tools: [EchoTool]) }.not_to raise_error
-    end
-
-    it "refuses one mount built twice through a shared helper called from two places" do
-      build = ->(auth) { Axn::OpenAPI.app(auth:, mount: :credentials) }
-      build.call(Axn::Extensions::Auth::Bearer.new(keys: { "data_pipeline" => "strong" }))
-      expect { build.call(Axn::Extensions::Auth::Bearer.new(keys: { "data_pipeline" => "weak" })) }
-        .to raise_error(Axn::OpenAPI::Error, /mount :credentials is already built at .*mounts_spec\.rb:\d+/i)
-    end
-
-    it "refuses building one mount a second time from somewhere else (two live apps, one name)" do
-      bearer = Axn::Extensions::Auth::Bearer.new(keys: { "data_pipeline" => "strong" })
-      weak = Axn::Extensions::Auth::Bearer.new(keys: { "data_pipeline" => "weak" })
-      Axn::OpenAPI.app(auth: bearer, mount: :credentials)
-      expect { Axn::OpenAPI.app(auth: weak, mount: :credentials) }
-        .to raise_error(Axn::OpenAPI::Error, /mount :credentials is already built at .*mounts_spec\.rb:\d+/i)
-    end
-
-    it "treats the default mount the same way" do
-      Axn::OpenAPI.app(auth: :none, tools: [EchoTool])
-      expect { Axn::OpenAPI.app(auth: :none, tools: [RefuseTool]) }.to raise_error(Axn::OpenAPI::Error, /the default mount is already built/i)
-    end
-
-    it "leaves no claim behind when a build fails" do
-      expect { Axn::OpenAPI.app(auth: [->(_r) { true }], mount: :adhoc, tools: [EchoTool]) }.to raise_error(Axn::OpenAPI::Error, /documented_auth/)
-      expect { Axn::OpenAPI.app(auth: :none, tools: [EchoTool]) }.not_to raise_error
-    end
-
-    describe "claims made while drawing a route set (the Rails route lifecycle)" do
-      let(:route_set) { Object.new }
-
-      def draw(set, &) = Axn::OpenAPI::Mounts.drawing(set, &)
-
-      it "refuses a second build within one draw, even from the same line" do
-        expect { draw(route_set) { 2.times { Axn::OpenAPI.app(auth: :none, mount: :adhoc, tools: [EchoTool]) } } }
-          .to raise_error(Axn::OpenAPI::Error, /mount :adhoc is already built/i)
-      end
-
-      it "releases a route set's claims when it is cleared, whatever line the rebuild comes from" do
-        draw(route_set) { Axn::OpenAPI.app(auth: :none, mount: :adhoc, tools: [EchoTool]) }
-        Axn::OpenAPI::Mounts.release!(route_set)
-        expect { draw(route_set) { Axn::OpenAPI.app(auth: :none, mount: :adhoc, tools: [EchoTool]) } }.not_to raise_error
-      end
-
-      it "leaves claims made outside that route set in place" do
-        Axn::OpenAPI.app(auth: :none, mount: :adhoc, tools: [EchoTool])
-        Axn::OpenAPI::Mounts.release!(route_set)
-        expect { draw(route_set) { Axn::OpenAPI.app(auth: :none, mount: :adhoc, tools: [EchoTool]) } }
-          .to raise_error(Axn::OpenAPI::Error, /already built/)
-      end
-    end
-
-    it "forgets every claim on reset_mounts!" do
-      Axn::OpenAPI.app(auth: :none, mount: :adhoc, tools: [EchoTool])
-      Axn::OpenAPI.reset_mounts!
-      expect { Axn::OpenAPI.app(auth: :none, tools: [EchoTool]) }.not_to raise_error
+    it "keeps no process-wide registry: rebuilding a mount, or serving one undeclared tool from two mounts, is explicit consumer code" do
+      expect do
+        2.times { Axn::OpenAPI.app(auth: :none, mount: :adhoc, tools: [EchoTool]) }
+        Axn::OpenAPI.app(auth: :none, tools: [EchoTool])
+      end.not_to raise_error
     end
   end
 end

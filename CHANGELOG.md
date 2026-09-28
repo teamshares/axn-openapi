@@ -51,20 +51,9 @@
   takes a Symbol) binds a tool to `Axn::OpenAPI.app(mount: :credentials, …)` and keeps it off every
   other mount.
   - An explicit `tools:` entry that declares a different mount raises.
-  - A process-wide registry refuses, at boot, serving one tool from two mounts.
-  - It also refuses building the same mount twice from different call sites, so two live apps under
-    one name can't serve its tools with different auth. A rebuild from the same site replaces the
-    claim, which keeps Rails route reloading safe.
-  - The "site" is the chain of application frames leading to the build, up to the first frame
-    inside an installed gem or Ruby's own library. So a shared helper building one mount from two
-    call sites raises, instead of passing as a reload.
-  - Under Rails, a Railtie ties a mount built during a route draw to that `RouteSet`. Clearing the
-    set, which every route reload does before redrawing, releases its claims. That makes a reload
-    after an edit that shifts the mount's line safe, where a site-only match would raise. Such
-    claims are never replaced by site, so one mount built twice within one draw raises, even from
-    one line in a loop. Claims made outside a draw keep the site rule.
-  - A failed build leaves no claim behind. Tests can clear the registry with
-    `Axn::OpenAPI.reset_mounts!`.
+  - That declaration is the isolation guarantee; there is no process-wide registry of built mounts,
+    so building a mount twice or listing an undeclared tool on two ad-hoc mounts is served as
+    written, and Rails route reloads need no special handling. The gem ships no Railtie.
   - `render_axn` refuses a mount-bound tool unless it is passed the matching `mount:`, so a
     controller can't serve a mount's tool past that mount's auth by accident. That `mount:` also
     labels the controller's `Authorize` event, so a controller denial is recorded under its mount

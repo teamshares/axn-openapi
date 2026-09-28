@@ -15,9 +15,6 @@ RSpec.configure do |config|
   # Disable RSpec exposing methods globally on `Module` and `main`
   config.disable_monkey_patching!
 
-  # Mount claims are process-global (one tool, one mount); each example starts from none.
-  config.before { Axn::OpenAPI.reset_mounts! }
-
   config.expect_with :rspec do |c|
     c.syntax = :expect
   end

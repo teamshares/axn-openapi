@@ -330,19 +330,11 @@ mount Axn::OpenAPI.app(auth: pipeline_key, mount: :credentials, info: { title: "
 - **A mismatched explicit tool fails at boot.** Passing `tools:` that includes a tool declared for a
   different mount raises. An explicit list of tools that declare no mount works on any mount (an
   ad-hoc mount).
-- **One tool, one mount; one build per mount.** Building a mount that would serve a tool another
-  mount already serves raises at boot. So does building the same mount a second time from a
-  different place, because two live apps under one name could otherwise serve its tools with
-  different auth. Give each ad-hoc mount its own `mount:` name.
-- **Reloads.** Under Rails, a mount built while routes are drawn belongs to that route set, and
-  clearing the route set releases it. Every route reload clears before it redraws, so reloading
-  after an edit that moves the mount's line works. Building one mount twice within a single draw
-  raises, even from the same line inside a loop. Outside a route draw, rebuilding from the same
-  place replaces the claim. "The same place" is the whole chain of your application's frames that
-  led to the build, so a shared helper called from two different lines is two builds and raises.
-  The Rails hook is installed by a Railtie, which requires `axn-openapi` to load after Rails, as
-  `Bundler.require` does.
-- **Tests.** Suites that build many apps should call `Axn::OpenAPI.reset_mounts!` between examples.
+- **Isolation is the declared binding.** There is no process-wide registry of built mounts. What
+  keeps a tool on its mount is its own `mount:` declaration: no other mount lists it by default, and
+  naming it in another mount's explicit `tools:` raises. Building the same mount twice, or listing
+  one undeclared tool on two ad-hoc mounts, is explicit code of your own and is served as written.
+  Rails route reloads just rebuild the apps, so nothing needs resetting.
 
 **Keep restricted tools out of `app/agent_tools/`.** That directory is the default `tool_roots` for
 *every* axn adapter, so a tool placed there is also served over MCP and ruby_llm. Put a credentials tool

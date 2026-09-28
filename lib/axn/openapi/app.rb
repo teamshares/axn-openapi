@@ -49,8 +49,6 @@ module Axn
                             security_schemes:, authorize_all: !@authorize.nil?).generate
         }
         @router = Router.new(tools: @tools, path_prefix: resolved_prefix, spec_path:, spec_provider: provider)
-        # Last, so a build that raises above leaves no claim behind for an app that never existed.
-        Mounts.claim!(mount, @tools, site: Mounts.build_site)
       end
 
       def call(env)
@@ -115,6 +113,8 @@ module Axn
         params.any? { |kind, _| kind == :rest } || params.count { |kind, _| %i[req opt].include?(kind) } >= 2
       end
 
+      def mount_label = @mount.nil? ? "the default mount" : "mount #{@mount.inspect}"
+
       def explicit_tools!(tools)
         tools.each do |axn|
           declared = Axn::OpenAPI.resolve_override_for(axn, :mount)
@@ -122,7 +122,7 @@ module Axn
 
           raise Axn::OpenAPI::Error,
                 "#{axn} declares `tool openapi: { mount: #{declared.inspect} }` and can't be served by " \
-                "#{Mounts.label(@mount)}; build it with Axn::OpenAPI.app(mount: #{declared.inspect}, ...)"
+                "#{mount_label}; build it with Axn::OpenAPI.app(mount: #{declared.inspect}, ...)"
         end
         tools
       end
@@ -135,7 +135,7 @@ module Axn
           return if restricted.empty?
 
           raise Axn::OpenAPI::Error,
-                "#{restricted.first} declares allowed_callers, but #{Mounts.label(@mount)} is built with auth: :none " \
+                "#{restricted.first} declares allowed_callers, but #{mount_label} is built with auth: :none " \
                 "(no caller is ever identified); configure an auth strategy"
         end
 
@@ -148,7 +148,7 @@ module Axn
 
           raise Axn::OpenAPI::Error,
                 "#{axn} allows #{unknown.map(&:inspect).join(', ')}, which no auth strategy on " \
-                "#{Mounts.label(@mount)} can authenticate as (known: #{known.map(&:inspect).join(', ')})"
+                "#{mount_label} can authenticate as (known: #{known.map(&:inspect).join(', ')})"
         end
       end
     end

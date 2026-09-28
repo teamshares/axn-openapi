@@ -107,9 +107,6 @@ module Axn
       allowed.any? { |id| id.to_s == principal.to_s }
     end
 
-    # Forgets every mount's tool claim (see Mounts) — for test suites that build apps repeatedly.
-    def self.reset_mounts! = Mounts.reset!
-
     # Pairs a strategy the gem can't describe on its own (a JWT verifier, say) with the OpenAPI
     # security scheme that documents it, so a mount can publish it in `components.securitySchemes`.
     def self.documented_auth(strategy, security_scheme:, name: "customAuth")
@@ -133,7 +130,6 @@ end
 
 require_relative "openapi/response"
 require_relative "openapi/auth"
-require_relative "openapi/mounts"
 require_relative "openapi/dispatch"
 require_relative "openapi/dispatcher"
 require_relative "openapi/request"
@@ -141,6 +137,5 @@ require_relative "openapi/gate"
 require_relative "openapi/route_table"
 require_relative "openapi/router"
 require_relative "openapi/app"
-require_relative "openapi/railtie" if defined?(Rails::Railtie)
 require_relative "openapi/controller"
 require_relative "openapi/spec_generator"

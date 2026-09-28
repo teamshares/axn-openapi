@@ -44,7 +44,6 @@ RSpec.describe "App authorization (403)" do
     denying = Axn::Extensions::Auth::CREDENTIALS_MISMATCH
     result_like = Struct.new(:ok?).new(false)
     [denying, result_like].each do |verdict|
-      Axn::OpenAPI.reset_mounts!
       app = Axn::OpenAPI.app(auth: strategy, mount: :credentials, authorize: ->(*) { verdict })
       expect(post(app, "/credentials_tool/v1", token: "pipeline-key").status).to eq(403)
     end
