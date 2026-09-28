@@ -59,6 +59,14 @@ RSpec.describe "App authorization (403)" do
     expect(JSON.parse(allowed.body)["error"]["message"]).to include("Latest available")
   end
 
+  it "answers a raising authorize: policy with a generic 500 on a version miss too, not a 404" do
+    app = Axn::OpenAPI.app(auth: strategy, mount: :credentials, authorize: ->(*) { raise "policy misconfigured" })
+    [post(app, "/credentials_tool/v1", token: "pipeline-key"), post(app, "/credentials_tool/v99", token: "pipeline-key")].each do |res|
+      expect(res.status).to eq(500)
+      expect(res.body).not_to include("policy misconfigured")
+    end
+  end
+
   it "emits axn.call for a denial, tagged with the principal and operation" do
     events = capture_axn_calls { post(Axn::OpenAPI.app(auth: strategy, mount: :credentials), "/credentials_tool/v1", token: "ops-key") }
     denial = axn_call_for(Axn::OpenAPI::Authorize, events)

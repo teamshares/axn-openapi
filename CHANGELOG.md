@@ -39,7 +39,8 @@
     strategy's verdict, so a denying `Axn::Result` or `Auth::Verdict` denies instead of passing as a
     truthy object.
   - A 404 never points a forbidden caller at a tool's latest version: it gets the same message as a
-    nonexistent tool.
+    nonexistent tool. An `authorize:` policy that raises is answered with the generic 500 on a
+    version miss too, just as on a real route, rather than being masked as that 404.
   - Build time raises for an `allowed_callers` tool or `authorize:` on an `auth: :none` mount, and
     for an `allowed_callers` entry none of the mount's strategies can authenticate as. That check is
     skipped when a strategy can't enumerate its principals.

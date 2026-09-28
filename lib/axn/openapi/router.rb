@@ -77,7 +77,7 @@ module Axn
       # the path is confirmed tool-shaped, the tool-not-found message names the tool rather than
       # echoing the raw (versioned) path, so it can't be mistaken for a version pointer itself.
       # `authorize` gates the latest-version pointer: a caller forbidden from the tool gets the plain
-      # "Unknown tool" instead of being pointed at a path it may not call.
+      # "Unknown tool" instead of being pointed at a path it may not call; a policy error still 500s.
       def not_found(path, script_name, authorize = nil)
         rel = @path_prefix.empty? ? path : path.delete_prefix(@path_prefix)
         match = TOOL_PATH.match(rel)
@@ -86,8 +86,13 @@ module Axn
         return error(404, "Unknown tool") unless match
 
         latest = @latest_by_name[match[:name]]
-        # A forbidden caller gets exactly what a nonexistent tool gets, so the 404 can't confirm it.
-        return error(404, "Unknown tool: #{match[:name]}") if latest.nil? || authorize&.call(latest)
+        return error(404, "Unknown tool: #{match[:name]}") if latest.nil?
+
+        # A forbidden caller (403) gets exactly what a nonexistent tool gets, so the 404 can't confirm
+        # it. Any other refusal — the generic 500 of a policy that raised — is passed through as it
+        # would be on a real route, so a misconfigured policy isn't masked as a missing version.
+        denied = authorize&.call(latest)
+        return denied.status == 403 ? error(404, "Unknown tool: #{match[:name]}") : denied if denied
 
         # Prepend the Rack mount base (SCRIPT_NAME) so the pointer is the REAL externally-visible URL
         # (e.g. /api/greeter/v2), not the mount-relative path (/greeter/v2) that 404s at the origin root.
