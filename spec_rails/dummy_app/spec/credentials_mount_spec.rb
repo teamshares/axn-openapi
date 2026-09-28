@@ -27,7 +27,8 @@ RSpec.describe "a Bearer-gated credentials mount inside Rails" do
   it "serves the allowlisted caller, handing the principal to the tool via context:" do
     read(token: "pipeline-key")
     expect(last_response.status).to eq(200)
-    expect(JSON.parse(last_response.body)).to eq("company_uuid" => "c-1", "read_by" => "data_pipeline")
+    expect(JSON.parse(last_response.body))
+      .to eq("company_uuid" => "c-1", "read_by" => "data_pipeline", "client_secret_ciphertext" => "ciphertext-b64")
   end
 
   it "keeps the credentials tool off the general mount" do
@@ -48,11 +49,13 @@ RSpec.describe "a Bearer-gated credentials mount inside Rails" do
     expect(doc["servers"]).to eq([{ "url" => "/internal/credentials" }])
   end
 
-  it "enforces the allowlist on the controller skin too" do
-    header "X-Caller", "ops"
+  it "authenticates and enforces the allowlist on the controller skin too" do
+    post "/credentials/read", '{"company_uuid":"c-1"}', "CONTENT_TYPE" => "application/json"
+    expect(last_response.status).to eq(401)
+    header "Authorization", "Bearer ops-key"
     post "/credentials/read", '{"company_uuid":"c-1"}', "CONTENT_TYPE" => "application/json"
     expect(last_response.status).to eq(403)
-    header "X-Caller", "data_pipeline"
+    header "Authorization", "Bearer pipeline-key"
     post "/credentials/read", '{"company_uuid":"c-1"}', "CONTENT_TYPE" => "application/json"
     expect(last_response.status).to eq(200)
   end

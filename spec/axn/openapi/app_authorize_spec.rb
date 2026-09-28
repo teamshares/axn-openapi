@@ -40,6 +40,25 @@ RSpec.describe "App authorization (403)" do
     expect(seen.first).to eq(["ops", CredentialsTool])
   end
 
+  it "reads a policy's verdict object by ok?, never truthiness (a denying Result must deny)" do
+    denying = Axn::Extensions::Auth::CREDENTIALS_MISMATCH
+    result_like = Struct.new(:ok?).new(false)
+    [denying, result_like].each do |verdict|
+      Axn::OpenAPI.reset_mounts!
+      app = Axn::OpenAPI.app(auth: strategy, mount: :credentials, authorize: ->(*) { verdict })
+      expect(post(app, "/credentials_tool/v1", token: "pipeline-key").status).to eq(403)
+    end
+  end
+
+  it "doesn't point a forbidden caller at a tool's latest version from a 404" do
+    app = Axn::OpenAPI.app(auth: strategy, mount: :credentials)
+    res = post(app, "/credentials_tool/v99", token: "ops-key")
+    expect(res.status).to eq(404)
+    expect(JSON.parse(res.body)).to eq("error" => { "message" => "Unknown tool: credentials_tool" })
+    allowed = post(app, "/credentials_tool/v99", token: "pipeline-key")
+    expect(JSON.parse(allowed.body)["error"]["message"]).to include("Latest available")
+  end
+
   it "emits axn.call for a denial, tagged with the principal and operation" do
     events = capture_axn_calls { post(Axn::OpenAPI.app(auth: strategy, mount: :credentials), "/credentials_tool/v1", token: "ops-key") }
     denial = axn_call_for(Axn::OpenAPI::Authorize, events)

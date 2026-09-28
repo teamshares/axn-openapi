@@ -17,7 +17,13 @@ module Axn
       # checked against the tool's `allowed_callers` exactly as a mount checks it (403 when refused).
       # A tool that declares `allowed_callers` REQUIRES it: dispatching such a tool without one would
       # silently ignore its declared allowlist on this path, so that raises instead.
-      def render_axn(axn_class, ambient_context: {}, principal: UNSET)
+      #
+      # `mount:` must name the mount a tool is bound to (`tool openapi: { mount: ... }`), and only
+      # that mount: a mount-bound tool is meant to be reachable solely behind that mount's auth, so
+      # serving it from a controller is an explicit, visible opt-in rather than something any
+      # controller can do by naming the class.
+      def render_axn(axn_class, ambient_context: {}, principal: UNSET, mount: nil)
+        _axn_openapi_check_mount!(axn_class, mount)
         dispatch = Axn::Extensions::InvokedVia.with(:openapi) { _axn_openapi_dispatch(axn_class, ambient_context, principal) }
         # Render boundary: guarantee the body is JSON-encodable before the renderer touches it, so an
         # unencodable value maps to the documented generic 500 rather than raising in `render json:`.
@@ -29,6 +35,19 @@ module Axn
       end
 
       private
+
+      def _axn_openapi_check_mount!(axn_class, mount)
+        declared = Axn::OpenAPI.resolve_override_for(axn_class, :mount)
+        return if declared == mount
+
+        raise Axn::OpenAPI::Error,
+              if declared
+                "#{axn_class} is bound to `tool openapi: { mount: #{declared.inspect} }`; serving it from a controller " \
+                  "requires render_axn(..., mount: #{declared.inspect}) — and the same authentication that mount enforces"
+              else
+                "#{axn_class} is not bound to mount #{mount.inspect}; drop mount: from render_axn"
+              end
+      end
 
       def _axn_openapi_dispatch(axn_class, ambient_context, principal)
         if principal.equal?(UNSET)

@@ -31,7 +31,6 @@ module Axn
         @context = context || ->(_env) { {} }
         @public_spec = public_spec
         check_access_policy!
-        Mounts.claim!(mount, @tools)
 
         @unauthorized_headers = Auth.unauthorized_headers(@strategies).freeze
         security_schemes = Auth.security_schemes(@strategies)
@@ -49,6 +48,8 @@ module Axn
                             security_schemes:, authorize_all: !@authorize.nil?).generate
         }
         @router = Router.new(tools: @tools, path_prefix: resolved_prefix, spec_path:, spec_provider: provider)
+        # Last, so a build that raises above leaves no claim behind for an app that never existed.
+        Mounts.claim!(mount, @tools, site: Mounts.build_site)
       end
 
       def call(env)

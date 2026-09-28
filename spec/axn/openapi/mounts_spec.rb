@@ -34,9 +34,28 @@ RSpec.describe "mounts" do
         .to raise_error(Axn::OpenAPI::Error, /EchoTool.*mount :adhoc.*default mount/)
     end
 
-    it "lets a rebuild of the same mount replace its claim (Rails route reloading)" do
-      Axn::OpenAPI.app(auth: :none, mount: :adhoc, tools: [EchoTool])
-      Axn::OpenAPI.app(auth: :none, mount: :adhoc, tools: [RefuseTool])
+    it "lets a rebuild of the same mount from the same place replace its claim (Rails route reloading)" do
+      build = ->(tools) { Axn::OpenAPI.app(auth: :none, mount: :adhoc, tools:) }
+      build.call([EchoTool])
+      build.call([RefuseTool])
+      expect { Axn::OpenAPI.app(auth: :none, tools: [EchoTool]) }.not_to raise_error
+    end
+
+    it "refuses building one mount a second time from somewhere else (two live apps, one name)" do
+      bearer = Axn::Extensions::Auth::Bearer.new(keys: { "data_pipeline" => "strong" })
+      weak = Axn::Extensions::Auth::Bearer.new(keys: { "data_pipeline" => "weak" })
+      Axn::OpenAPI.app(auth: bearer, mount: :credentials)
+      expect { Axn::OpenAPI.app(auth: weak, mount: :credentials) }
+        .to raise_error(Axn::OpenAPI::Error, /mount :credentials is already built at .*mounts_spec\.rb:\d+/i)
+    end
+
+    it "treats the default mount the same way" do
+      Axn::OpenAPI.app(auth: :none, tools: [EchoTool])
+      expect { Axn::OpenAPI.app(auth: :none, tools: [RefuseTool]) }.to raise_error(Axn::OpenAPI::Error, /the default mount is already built/i)
+    end
+
+    it "leaves no claim behind when a build fails" do
+      expect { Axn::OpenAPI.app(auth: [->(_r) { true }], mount: :adhoc, tools: [EchoTool]) }.to raise_error(Axn::OpenAPI::Error, /documented_auth/)
       expect { Axn::OpenAPI.app(auth: :none, tools: [EchoTool]) }.not_to raise_error
     end
 

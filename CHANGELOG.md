@@ -33,7 +33,11 @@
   - An authenticated caller not on the list gets `403 {"error":{"message":"Forbidden"}}`. The check
     runs before the 405 verb check.
   - A mount's `authorize: ->(principal, axn_class) { bool }` replaces the default check, which is
-    public as `Axn::OpenAPI.allowed_caller?`.
+    public as `Axn::OpenAPI.allowed_caller?`. The policy's answer is read `ok?`-first, like a
+    strategy's verdict, so a denying `Axn::Result` or `Auth::Verdict` denies instead of passing as a
+    truthy object.
+  - A 404 never points a forbidden caller at a tool's latest version: it gets the same message as a
+    nonexistent tool.
   - Build time raises for an `allowed_callers` tool or `authorize:` on an `auth: :none` mount, and
     for an `allowed_callers` entry none of the mount's strategies can authenticate as. That check is
     skipped when a strategy can't enumerate its principals.
@@ -44,9 +48,14 @@
   takes a Symbol) binds a tool to `Axn::OpenAPI.app(mount: :credentials, …)` and keeps it off every
   other mount.
   - An explicit `tools:` entry that declares a different mount raises.
-  - A process-wide registry refuses serving one tool from two mounts at boot. Rebuilding the same
-    mount replaces its claim, which keeps Rails route reloading safe. Tests can clear it with
+  - A process-wide registry refuses, at boot, serving one tool from two mounts.
+  - It also refuses building the same mount twice from different call sites, so two live apps under
+    one name can't serve its tools with different auth. A rebuild from the same site replaces the
+    claim, which keeps Rails route reloading safe.
+  - A failed build leaves no claim behind. Tests can clear the registry with
     `Axn::OpenAPI.reset_mounts!`.
+  - `render_axn` refuses a mount-bound tool unless it is passed the matching `mount:`, so a
+    controller can't serve a mount's tool past that mount's auth by accident.
   - Each mount takes its own `info:` (merged over `info_*`).
 - `[FEAT]` The generated document describes the mount's auth: `components.securitySchemes` plus a
   top-level `security` that lists the strategies as alternatives.

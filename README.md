@@ -125,7 +125,8 @@ Axn::OpenAPI.app(auth:, mount: nil, tools: nil, authorize: nil, context: nil, pu
   trusted `ambient_context` (see [below](#ambient_context-the-authrequest-context-seam)). It is evaluated
   only when a tool is actually dispatched, and defaults to an empty Hash.
 - **`public_spec:`** set to true serves the OpenAPI document without authentication. By default the
-  document is gated like the tools.
+  document is gated like the tools. A public document names every tool on the mount, so don't set it
+  on a mount whose tool list is itself sensitive.
 - **`info:`** takes `{ title:, version:, description: }`, which is merged over the configured
   `info_*` for this mount's document.
 - **`path_prefix:`** / **`spec_path:`** override the configured defaults for this app instance.
@@ -234,6 +235,8 @@ document never omits how the mount authenticates.
 
 **Return a String principal id** (or a Symbol) from a custom strategy. Allowlists match on it, and
 logs record it. Any other principal object is recorded only by its class name, so claims never leak.
+**Never put the presented token into an exception message** from a custom strategy. Exception
+messages reach `on_exception` verbatim, and context redaction can't reach inside them.
 
 ### Authorization (403)
 
@@ -253,7 +256,8 @@ without `allowed_callers` admits any authenticated caller.
 
 Pass `authorize: ->(principal, axn_class) { ... }` on the mount to replace that check. The default is
 public as `Axn::OpenAPI.allowed_caller?(principal, axn_class)`, so a custom policy can compose with
-it.
+it. The policy's answer is read like a verdict: `ok?` first, then truthiness. So a policy that
+returns an `Axn::Result` or an `Axn::Extensions::Auth::Verdict` denies when that object is not ok.
 
 These combinations fail at build time instead of at request time:
 
@@ -262,9 +266,15 @@ These combinations fail at build time instead of at request time:
 - an `allowed_callers` entry that none of the mount's strategies can authenticate as. This check is
   skipped for a strategy that can't list its principals, such as a JWT verifier.
 
-The controller skin enforces the same allowlist. Pass `render_axn(Tool, principal: ...)` with the
-caller your controller authenticated. Calling `render_axn` on a tool that declares `allowed_callers`
-without a `principal:` raises rather than silently ignoring the list.
+The controller skin enforces the same boundaries:
+
+- **Allowlist.** Pass `render_axn(Tool, principal: ...)` with the caller your controller
+  authenticated. Use a principal that came out of real authentication, never a caller-asserted
+  header. Calling it on a tool that declares `allowed_callers` without a `principal:` raises rather
+  than silently ignoring the list.
+- **Mount binding.** A tool bound to a mount can be rendered only with a matching
+  `render_axn(Tool, mount: :credentials, ...)`, so a controller can't expose it past that mount's
+  auth by accident.
 
 ### Observability
 
@@ -289,7 +299,12 @@ Axn::OpenAPI.app(auth: pipeline_key, mount: :credentials, context: ->(_env, prin
 ```
 
 The presented credential is never logged: the gate's inputs are `sensitive:`, and `Request#inspect`
-redacts headers and body. The authenticated principal is also available to Rack middleware as
+redacts headers and body. **The gem redacts the gate, not your tool.** axn logs a tool's inputs and
+exposures on every call, so declare anything secret `sensitive: true`:
+
+```ruby
+exposes :client_secret_ciphertext, type: String, sensitive: true
+``` The authenticated principal is also available to Rack middleware as
 `env["axn.openapi.principal"]`.
 
 ## Mounts: keeping tool sets apart
@@ -312,9 +327,12 @@ mount Axn::OpenAPI.app(auth: pipeline_key, mount: :credentials, info: { title: "
 - **A mismatched explicit tool fails at boot.** Passing `tools:` that includes a tool declared for a
   different mount raises. An explicit list of tools that declare no mount works on any mount (an
   ad-hoc mount).
-- **One tool, one mount.** Building a second mount that would serve a tool another mount already
-  serves raises at boot. Rebuilding the same mount replaces its claim, so Rails route reloading works.
-  Test suites that build many apps should call `Axn::OpenAPI.reset_mounts!` between examples.
+- **One tool, one mount; one build per mount.** Building a mount that would serve a tool another
+  mount already serves raises at boot. So does building the same mount a second time from a
+  different place, because two live apps under one name could otherwise serve its tools with
+  different auth. Give each ad-hoc mount its own `mount:` name.
+- **Reloads.** Rebuilding a mount from the same place (Rails route reloading) replaces its claim.
+- **Tests.** Suites that build many apps should call `Axn::OpenAPI.reset_mounts!` between examples.
 
 **Keep restricted tools out of `app/agent_tools/`.** That directory is the default `tool_roots` for
 *every* axn adapter, so a tool placed there is also served over MCP and ruby_llm. Put a credentials tool

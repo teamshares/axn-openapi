@@ -43,7 +43,7 @@ module Axn
         return spec_dispatch(http_method, script_name) if spec_path?(path)
 
         entry = @by_path[path]
-        return not_found(path, script_name) unless entry
+        return not_found(path, script_name, authorize) unless entry
 
         denied = authorize&.call(entry)
         return denied if denied
@@ -76,7 +76,9 @@ module Axn
       # anything else is a plain unknown-tool 404. Pointer is error-body only, never a route. Once
       # the path is confirmed tool-shaped, the tool-not-found message names the tool rather than
       # echoing the raw (versioned) path, so it can't be mistaken for a version pointer itself.
-      def not_found(path, script_name)
+      # `authorize` gates the latest-version pointer: a caller forbidden from the tool gets the plain
+      # "Unknown tool" instead of being pointed at a path it may not call.
+      def not_found(path, script_name, authorize = nil)
         rel = @path_prefix.empty? ? path : path.delete_prefix(@path_prefix)
         match = TOOL_PATH.match(rel)
         # Don't echo the raw request path — it's request-derived (and possibly not even valid UTF-8),
@@ -84,7 +86,8 @@ module Axn
         return error(404, "Unknown tool") unless match
 
         latest = @latest_by_name[match[:name]]
-        return error(404, "Unknown tool: #{match[:name]}") unless latest
+        # A forbidden caller gets exactly what a nonexistent tool gets, so the 404 can't confirm it.
+        return error(404, "Unknown tool: #{match[:name]}") if latest.nil? || authorize&.call(latest)
 
         # Prepend the Rack mount base (SCRIPT_NAME) so the pointer is the REAL externally-visible URL
         # (e.g. /api/greeter/v2), not the mount-relative path (/greeter/v2) that 404s at the origin root.

@@ -11,9 +11,11 @@ class IntegrationCredentials
   expects :caller_id, on: :ambient_context, type: String
   exposes :company_uuid, type: String
   exposes :read_by, type: String
+  # axn logs exposures on every call; a credential exposure must be `sensitive:` so it's filtered.
+  exposes :client_secret_ciphertext, type: String, sensitive: true
 
   tag :caller_id, :caller_id
   tag :company_uuid, :company_uuid
 
-  def call = expose(company_uuid:, read_by: caller_id)
+  def call = expose(company_uuid:, read_by: caller_id, client_secret_ciphertext: "ciphertext-b64")
 end

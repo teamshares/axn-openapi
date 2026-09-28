@@ -76,7 +76,8 @@ module Axn
 
       expects :principal, optional: true, sensitive: true
       expects :axn_class, type: Class
-      expects :policy, optional: true
+      # A policy object may hold a client or credential of its own; never render it.
+      expects :policy, optional: true, sensitive: true
       expects :mount, type: Symbol, optional: true
       expects :operation_id, type: String
 
@@ -87,7 +88,9 @@ module Axn
       tag :operation_id, :operation_id
 
       def call
-        allowed = policy ? policy.call(principal, axn_class) : Axn::OpenAPI.allowed_caller?(principal, axn_class)
+        # A policy's answer is read like a strategy's verdict — `ok?` first — so a policy returning a
+        # denying Axn::Result or Auth verdict (both truthy objects) denies instead of silently allowing.
+        allowed = policy ? Axn::Extensions::Auth.verified?(policy.call(principal, axn_class)) : Axn::OpenAPI.allowed_caller?(principal, axn_class)
         fail!("#{Gate.principal_label(principal) || 'anonymous'} may not call #{operation_id}") unless allowed
       end
     end

@@ -89,11 +89,15 @@ end
     describe it. Return a String principal id.
 - **403.** A tool declares `tool openapi: { allowed_callers: ["principal_id"] }`, and an authenticated
   caller not on the list gets 403. A mount's `authorize: ->(principal, axn_class) { bool }`
-  replaces that check; `Axn::OpenAPI.allowed_caller?` is the default. The controller skin needs
-  `render_axn(..., principal:)` for such a tool and raises without it.
+  replaces that check; `Axn::OpenAPI.allowed_caller?` is the default. The policy's answer is read
+  `ok?`-first, so a denying `Axn::Result` denies.
+  - The controller skin needs `render_axn(..., principal:)` for such a tool and raises without it.
+  - A mount-bound tool also needs `render_axn(..., mount: <its mount>)`.
+- **Redaction.** Mark secret exposures and inputs on your tool `sensitive: true`. The gem redacts
+  only its own gate.
 - **Mounts.** `tool openapi: { mount: :credentials }` binds a tool to
   `Axn::OpenAPI.app(mount: :credentials, …)` and keeps it off every other mount. Serving one tool
-  from two mounts raises at boot. Keep restricted tools **out of `app/agent_tools/`**: that root is
+  from two mounts raises at boot, and so does building one mount twice from different places. Keep restricted tools **out of `app/agent_tools/`**: that root is
   shared with axn-mcp and axn-ruby_llm.
 - **Observability.** The gate runs as Axns (`Axn::OpenAPI::Authenticate` / `Authorize`), so 401s and
   403s emit `axn.call` with `reason`/`mount`/`principal`, and everything is stamped
