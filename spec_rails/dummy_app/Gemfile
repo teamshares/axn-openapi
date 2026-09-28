@@ -5,9 +5,12 @@ source "https://rubygems.org"
 # The gem under test — pulls in its own axn dependency and any Railtie/Engine it defines.
 gem "axn-openapi", path: "../../"
 
-gem "rails", "~> 7.0"
+gem "rails", ">= 8.1" # axn requires activesupport >= 8.1
 gem "sqlite3", "~> 2.0"
 
 group :development, :test do
   gem "rspec", "~> 3.0"
 end
+
+# TEMP (PRO-3566): mirror the root Gemfile's unreleased-axn pin; drop with it.
+gem "axn", git: "https://github.com/teamshares/axn", branch: "main"

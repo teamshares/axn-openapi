@@ -46,4 +46,39 @@ RSpec.describe Axn::OpenAPI::Controller do
     c.render_axn(ContextEchoTool)
     expect(c.rendered[:status]).to eq(400)
   end
+
+  describe "a tool that declares allowed_callers" do
+    it "refuses to dispatch without a principal: — the controller skin must not fail open" do
+      c = controller_class.new('{"company_uuid":"c-1"}')
+      expect { c.render_axn(CredentialsTool, mount: :credentials) }.to raise_error(Axn::OpenAPI::Error, /CredentialsTool.*principal:/)
+    end
+
+    it "dispatches an allowed principal" do
+      c = controller_class.new('{"company_uuid":"c-1"}')
+      c.render_axn(CredentialsTool, mount: :credentials, principal: "data_pipeline", ambient_context: { caller_id: "data_pipeline" })
+      expect(c.rendered[:status]).to eq(200)
+    end
+
+    it "renders 403 for a principal off the list, recording the denial" do
+      c = controller_class.new('{"company_uuid":"c-1"}')
+      events = capture_axn_calls { c.render_axn(CredentialsTool, mount: :credentials, principal: "ops") }
+      expect(c.rendered).to eq(json: { "error" => { "message" => "Forbidden" } }, status: 403)
+      denial = axn_call_for(Axn::OpenAPI::Authorize, events)
+      expect(denial[:outcome]).to eq("failure")
+      expect(denial[:dimensions]).to include(mount: "credentials", invoked_via: "openapi")
+    end
+  end
+
+  it "refuses a tool bound to a mount unless render_axn names that mount (it would bypass the mount's auth)" do
+    c = controller_class.new("")
+    expect { c.render_axn(CredentialsPingTool) }.to raise_error(Axn::OpenAPI::Error, /CredentialsPingTool.*mount: :credentials/)
+    expect { c.render_axn(CredentialsPingTool, mount: :other) }.to raise_error(Axn::OpenAPI::Error, /mount: :credentials/)
+    expect { c.render_axn(EchoTool, mount: :credentials) }.to raise_error(Axn::OpenAPI::Error, /EchoTool/)
+  end
+
+  it "checks a principal: against a tool with no allowlist too (any principal is admitted)" do
+    c = controller_class.new("")
+    c.render_axn(CredentialsPingTool, mount: :credentials, principal: "anyone")
+    expect(c.rendered[:status]).to eq(200)
+  end
 end

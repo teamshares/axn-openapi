@@ -19,7 +19,7 @@ module Axn
         @spec_provider = spec_provider || ->(_script_name) { {} }
 
         entries = RouteTable.build(tools:, path_prefix: @path_prefix)
-        @by_path = entries.to_h { |e| [e.path, e.axn] }
+        @by_path = entries.to_h { |e| [e.path, e] }
         # tool_name => newest entry, for the 404 pointer. Entries are asc by version, so `last` wins.
         @latest_by_name = entries.to_h { |e| [e.axn.tool_name(:openapi), e] }
 
@@ -30,14 +30,23 @@ module Axn
 
         raise Axn::OpenAPI::Error,
               "spec_path #{@spec_full.inspect} collides with the tool route for " \
-              "#{@by_path[@spec_full].tool_name(:openapi).inspect}; configure a non-colliding spec_path"
+              "#{@by_path[@spec_full].axn.tool_name(:openapi).inspect}; configure a non-colliding spec_path"
       end
 
-      def route(http_method:, path:, raw_body:, ambient_context: {}, script_name: "")
-        return spec_dispatch(http_method, script_name) if path == @spec_full
+      def spec_path?(path) = path == @spec_full
 
-        axn = @by_path[path]
-        return not_found(path, script_name) unless axn
+      # `authorize:` (optional) is called with the matched RouteEntry once the tool is known and
+      # returns nil to proceed or a Dispatch (403) to stop — ahead of the verb check, so a forbidden
+      # caller learns nothing about what the path would accept. `ambient_context:` may be a Hash or a
+      # zero-arity callable, evaluated only when a tool is actually dispatched.
+      def route(http_method:, path:, raw_body:, ambient_context: {}, script_name: "", authorize: nil)
+        return spec_dispatch(http_method, script_name) if spec_path?(path)
+
+        entry = @by_path[path]
+        return not_found(path, script_name, authorize) unless entry
+
+        denied = authorize&.call(entry)
+        return denied if denied
         return error(405, "Method not allowed", allow: "POST") unless http_method == "POST"
 
         # Shared parser (Dispatcher.parse_body) so the mount and controller skins can't diverge on
@@ -45,7 +54,8 @@ module Axn
         params = Dispatcher.parse_body(raw_body)
         return Dispatcher.malformed_body_dispatch if params.nil?
 
-        Dispatcher.call(axn_class: axn, params:, ambient_context:)
+        ambient_context = ambient_context.call if ambient_context.respond_to?(:call)
+        Dispatcher.call(axn_class: entry.axn, params:, ambient_context:)
       end
 
       private
@@ -66,7 +76,9 @@ module Axn
       # anything else is a plain unknown-tool 404. Pointer is error-body only, never a route. Once
       # the path is confirmed tool-shaped, the tool-not-found message names the tool rather than
       # echoing the raw (versioned) path, so it can't be mistaken for a version pointer itself.
-      def not_found(path, script_name)
+      # `authorize` gates the latest-version pointer: a caller forbidden from the tool gets the plain
+      # "Unknown tool" instead of being pointed at a path it may not call; a policy error still 500s.
+      def not_found(path, script_name, authorize = nil)
         rel = @path_prefix.empty? ? path : path.delete_prefix(@path_prefix)
         match = TOOL_PATH.match(rel)
         # Don't echo the raw request path — it's request-derived (and possibly not even valid UTF-8),
@@ -74,7 +86,13 @@ module Axn
         return error(404, "Unknown tool") unless match
 
         latest = @latest_by_name[match[:name]]
-        return error(404, "Unknown tool: #{match[:name]}") unless latest
+        return error(404, "Unknown tool: #{match[:name]}") if latest.nil?
+
+        # A forbidden caller (403) gets exactly what a nonexistent tool gets, so the 404 can't confirm
+        # it. Any other refusal — the generic 500 of a policy that raised — is passed through as it
+        # would be on a real route, so a misconfigured policy isn't masked as a missing version.
+        denied = authorize&.call(latest)
+        return denied.status == 403 ? error(404, "Unknown tool: #{match[:name]}") : denied if denied
 
         # Prepend the Rack mount base (SCRIPT_NAME) so the pointer is the REAL externally-visible URL
         # (e.g. /api/greeter/v2), not the mount-relative path (/greeter/v2) that 404s at the origin root.

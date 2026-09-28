@@ -10,7 +10,7 @@ Bundler.require(*Rails.groups)
 
 module DummyApp
   class Application < Rails::Application
-    config.load_defaults 7.0
+    config.load_defaults 8.1
 
     # Minimal API-only app — no views/helpers/session middleware; enough to boot Rails + ActiveRecord.
     config.api_only = true

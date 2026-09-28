@@ -19,15 +19,12 @@ module Axn
         tools
           .sort_by { |axn| [axn.tool_name(:openapi), axn.tool_version] }
           .map do |axn|
-            name = axn.tool_name(:openapi)
-            version = axn.tool_version
-            RouteEntry.new(
-              path: "#{prefix}/#{name}/v#{version}",
-              axn:,
-              operation_id: "#{name}_v#{version}",
-            )
+            RouteEntry.new(path: "#{prefix}/#{axn.tool_name(:openapi)}/v#{axn.tool_version}", axn:, operation_id: operation_id(axn))
           end
       end
+
+      # The doc-local operationId for one tool version — also what the gate tags a request with.
+      def operation_id(axn) = "#{axn.tool_name(:openapi)}_v#{axn.tool_version}"
     end
   end
 end

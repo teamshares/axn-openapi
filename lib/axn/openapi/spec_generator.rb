@@ -6,11 +6,18 @@ module Axn
     # per tool, requestBody = input_schema, 200 = output_schema, shared Error component for
     # failures, and the semantic hints as an x-axn-semantic-hints vendor extension.
     class SpecGenerator
-      def initialize(tools:, path_prefix: nil, info: nil, servers_base: nil)
+      # `security_schemes:` (name => OpenAPI security scheme, from Auth.security_schemes) documents how
+      # the mount authenticates: published as `components.securitySchemes` plus a top-level `security`
+      # listing them as alternatives, and a 401 on every operation. A 403 is documented where the
+      # tool declares `allowed_callers`, or on every operation when `authorize_all:` (a mount-level
+      # `authorize:` callable may refuse any of them). `info:` is merged over the configured info_*.
+      def initialize(tools:, path_prefix: nil, info: nil, servers_base: nil, security_schemes: {}, authorize_all: false)
         @tools = tools
         @path_prefix = (path_prefix || Axn::OpenAPI.config.path_prefix).to_s
-        @info = info || default_info
+        @info = default_info.merge(Auth.deep_stringify(info || {}))
         @servers_base = servers_base.to_s
+        @security_schemes = security_schemes || {}
+        @authorize_all = authorize_all
       end
 
       def generate
@@ -24,6 +31,11 @@ module Axn
         doc["servers"] = [{ "url" => @servers_base }] unless @servers_base.empty?
         doc["paths"] = entries.to_h { |entry| [entry.path, path_item(entry)] }
         doc["components"] = { "schemas" => { "Error" => error_schema } }
+        unless @security_schemes.empty?
+          # Fresh copies per document (see error_ref) — schemes may be shared frozen objects.
+          doc["components"]["securitySchemes"] = Auth.deep_stringify(@security_schemes)
+          doc["security"] = @security_schemes.keys.map { |name| { name => [] } }
+        end
         doc
       end
 
@@ -49,10 +61,18 @@ module Axn
             "500" => error_response("Internal server error"),
           },
         }
+        op["responses"]["401"] = error_response("Unauthorized") unless @security_schemes.empty?
+        op["responses"]["403"] = error_response("Forbidden") if forbiddable?(axn)
         op["summary"] = axn.description if axn.description
         hints = axn._semantic_hints.map(&:to_s)
         op["x-axn-semantic-hints"] = hints unless hints.empty?
         { "post" => op }
+      end
+
+      def forbiddable?(axn)
+        return false if @security_schemes.empty?
+
+        @authorize_all || !Axn::OpenAPI.resolve_override_for(axn, :allowed_callers).nil?
       end
 
       # `required` is derived from the contract, not hardcoded true: a tool with no required inbound
