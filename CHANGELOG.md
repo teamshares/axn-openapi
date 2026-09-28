@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+> **Before cutting a release:** these changes need `Axn::Extensions::Auth`, which is on axn `main` but not in a released axn yet. Raise the gemspec `axn` floor to the release that ships it (alpha 7, PRO-3301) and drop the temporary `gem "axn", git: …` pins in `Gemfile` and `spec_rails/dummy_app/Gemfile`.
+
 - `[BREAKING]` `Axn::OpenAPI.app` / `App.new` now **require `auth:`**. The gem is fail-closed.
   - **Old:** omitting it served unauthenticated. **New:** omitting it raises `Axn::OpenAPI::Error` at build time.
   - Pass a strategy (`Axn::Extensions::Auth::Bearer.new(keys: {...})` from axn core), an Array of
