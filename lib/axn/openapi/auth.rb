@@ -108,7 +108,19 @@ module Axn
 
         def call(request) = @strategy.call(request)
         def principals = @strategy.respond_to?(:principals) ? @strategy.principals : nil
-        def unauthorized_headers = @strategy.respond_to?(:unauthorized_headers) ? @strategy.unauthorized_headers : {}
+
+        # The wrapped strategy's own challenge when it gives one; otherwise, for an `http` scheme, the
+        # challenge that scheme implies (`WWW-Authenticate: Bearer`), since RFC 9110 requires a 401 to
+        # carry one. Other scheme types (apiKey, oauth2, …) have no standard challenge to derive.
+        def unauthorized_headers
+          own = @strategy.respond_to?(:unauthorized_headers) ? @strategy.unauthorized_headers : nil
+          return own if own && !own.empty?
+
+          scheme = openapi_security_scheme["scheme"].to_s
+          return {} unless openapi_security_scheme["type"] == "http" && !scheme.empty?
+
+          { "www-authenticate" => scheme[0].upcase + scheme[1..] }
+        end
 
         # The wrapped strategy may close over live credentials: never render it.
         def inspect = "#<#{self.class.name} name=#{openapi_security_scheme_name.inspect} strategy=[REDACTED]>"

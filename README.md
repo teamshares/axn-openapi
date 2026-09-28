@@ -230,8 +230,10 @@ Axn::OpenAPI.app(
 ```
 
 `documented_auth` pairs a strategy the gem can't describe on its own with the security scheme that
-describes it in the document. `Bearer` needs no wrapping: it documents itself as `http`/`bearer`, or
-as `apiKey` for a custom header. A strategy the gem can't describe is refused at build time, so the
+describes it in the document. For an `http` scheme it also supplies the 401's `WWW-Authenticate`
+challenge (`Bearer` for `scheme: "bearer"`) when the wrapped strategy doesn't give its own.
+`Bearer` needs no wrapping: it documents itself as `http`/`bearer`, or as `apiKey` for a custom
+header. A strategy the gem can't describe is refused at build time, so the
 document never omits how the mount authenticates.
 
 **Return a String principal id** (or a Symbol) from a custom strategy. Allowlists match on it, and

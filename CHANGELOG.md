@@ -71,7 +71,9 @@
   - A `Bearer` strategy is documented as `http`/`bearer`, or as `apiKey` for a custom `header:`.
     Wrap any other strategy (e.g. an app-side JWT verifier) with
     `Axn::OpenAPI.documented_auth(strategy, security_scheme: {...}, name:)`. A strategy the gem can't
-    describe is refused at build time.
+    describe is refused at build time. A documented `http` scheme whose strategy supplies no 401
+    challenge gets the one the scheme implies (`WWW-Authenticate: Bearer` for `scheme: "bearer"`),
+    so its 401s carry the challenge RFC 9110 requires. The strategy's own challenge still wins.
   - Every operation documents `401`. `403` is documented where the tool has `allowed_callers`, or
     everywhere when the mount has `authorize:`.
   - `Axn::OpenAPI.spec` accepts `mount:`, `auth:` and `authorize:` to produce the same document.

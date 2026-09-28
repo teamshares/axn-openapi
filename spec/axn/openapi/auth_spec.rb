@@ -86,6 +86,20 @@ RSpec.describe Axn::OpenAPI::Auth do
       expect(wrapped.openapi_security_scheme_name).to eq("customAuth")
     end
 
+    it "derives the 401 challenge from an http scheme when the wrapped strategy gives none" do
+      expect(jwt.unauthorized_headers).to eq("www-authenticate" => "Bearer")
+      basic = Axn::OpenAPI.documented_auth(->(_req) { true }, security_scheme: { type: "http", scheme: "basic" })
+      expect(basic.unauthorized_headers).to eq("www-authenticate" => "Basic")
+      api_key = Axn::OpenAPI.documented_auth(->(_req) { true }, security_scheme: { type: "apiKey", in: "header", name: "X-Key" })
+      expect(api_key.unauthorized_headers).to eq({})
+    end
+
+    it "prefers the wrapped strategy's own challenge" do
+      custom = Struct.new(:call, :unauthorized_headers).new(nil, { "www-authenticate" => 'Bearer realm="x"' })
+      expect(Axn::OpenAPI.documented_auth(custom, security_scheme: { type: "http", scheme: "bearer" }).unauthorized_headers)
+        .to eq("www-authenticate" => 'Bearer realm="x"')
+    end
+
     it "refuses a non-callable strategy or a scheme without a type" do
       expect { Axn::OpenAPI.documented_auth("x", security_scheme: { type: "http" }) }.to raise_error(Axn::OpenAPI::Error, /#call/)
       expect { Axn::OpenAPI.documented_auth(bearer, security_scheme: { scheme: "bearer" }) }.to raise_error(Axn::OpenAPI::Error, /type/)
