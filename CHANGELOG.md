@@ -2,6 +2,78 @@
 
 ## Unreleased
 
+- `[BREAKING]` `Axn::OpenAPI.app` / `App.new` now **require `auth:`**. The gem is fail-closed.
+  - **Old:** omitting it served unauthenticated. **New:** omitting it raises `Axn::OpenAPI::Error` at build time.
+  - Pass a strategy (`Axn::Extensions::Auth::Bearer.new(keys: {...})` from axn core), an Array of
+    strategies (any of them may authenticate), or `auth: :none` to serve unauthenticated explicitly.
+- `[BREAKING]` `Axn::OpenAPI.tools` is now mount-filtered: `tools(mount: nil)`.
+  - **Old:** it listed every `:openapi` tool. **New:** it lists only the tools bound to the given
+    mount, and the default (nil) mount excludes any tool declaring `tool openapi: { mount: ... }`.
+  - `.app` and `.spec` default their tools the same way.
+- `[BREAKING]` A mount's `context:` is now evaluated lazily, and may take the principal.
+  - **Old:** it ran on every request, including 404/405/spec-document requests. **New:** it runs
+    only when a tool is actually dispatched.
+  - A two-parameter `context: ->(env, principal)` receives the authenticated principal. A
+    one-parameter `->(env)` works as before.
+- `[BREAKING]` Changes to the internal `Router`'s interface:
+  - It now maps a path to its `RouteEntry` rather than to the bare Axn.
+  - `#route` takes `authorize:`, and accepts a callable `ambient_context:`.
+  - It gains `#spec_path?`.
+- `[FEAT]` Authentication runs before routing. An unauthenticated request gets
+  `401 {"error":{"message":"Unauthorized"}}` on every path, including unknown ones, so tool
+  existence can't be probed. The 401 carries each strategy's `www-authenticate` challenge (merged
+  when there are several).
+  - The served OpenAPI document is gated the same way unless the mount passes `public_spec: true`.
+  - A strategy that raises (a misconfigured secret) is answered with the generic 500 and reported,
+    never a 401.
+  - The authenticated principal is stored at `env["axn.openapi.principal"]`
+    (`Axn::OpenAPI::PRINCIPAL_ENV_KEY`).
+- `[FEAT]` A per-tool 403 allowlist: `tool openapi: { allowed_callers: ["data_pipeline"] }` (a new
+  overridable setting that takes a non-empty Array of String/Symbol principal ids).
+  - An authenticated caller not on the list gets `403 {"error":{"message":"Forbidden"}}`. The check
+    runs before the 405 verb check.
+  - A mount's `authorize: ->(principal, axn_class) { bool }` replaces the default check, which is
+    public as `Axn::OpenAPI.allowed_caller?`.
+  - Build time raises for an `allowed_callers` tool or `authorize:` on an `auth: :none` mount, and
+    for an `allowed_callers` entry none of the mount's strategies can authenticate as. That check is
+    skipped when a strategy can't enumerate its principals.
+  - The controller skin enforces the same allowlist: `render_axn(..., principal:)` returns a 403 on
+    refusal. Calling it without `principal:` on an allowlisted tool raises, rather than silently
+    failing open.
+- `[FEAT]` Named mounts: `tool openapi: { mount: :credentials }` (a new overridable setting that
+  takes a Symbol) binds a tool to `Axn::OpenAPI.app(mount: :credentials, …)` and keeps it off every
+  other mount.
+  - An explicit `tools:` entry that declares a different mount raises.
+  - A process-wide registry refuses serving one tool from two mounts at boot. Rebuilding the same
+    mount replaces its claim, which keeps Rails route reloading safe. Tests can clear it with
+    `Axn::OpenAPI.reset_mounts!`.
+  - Each mount takes its own `info:` (merged over `info_*`).
+- `[FEAT]` The generated document describes the mount's auth: `components.securitySchemes` plus a
+  top-level `security` that lists the strategies as alternatives.
+  - A `Bearer` strategy is documented as `http`/`bearer`, or as `apiKey` for a custom `header:`.
+    Wrap any other strategy (e.g. an app-side JWT verifier) with
+    `Axn::OpenAPI.documented_auth(strategy, security_scheme: {...}, name:)`. A strategy the gem can't
+    describe is refused at build time.
+  - Every operation documents `401`. `403` is documented where the tool has `allowed_callers`, or
+    everywhere when the mount has `authorize:`.
+  - `Axn::OpenAPI.spec` accepts `mount:`, `auth:` and `authorize:` to produce the same document.
+- `[FEAT]` Authentication and authorization run as Axns (`Axn::OpenAPI::Authenticate` /
+  `Axn::OpenAPI::Authorize`), following the pattern of axn-webhooks' `Verify` stage. Every
+  request, including a 401/403 that never reaches a tool, emits core's `axn.call`
+  event/span/log with `mount` and `reason` dimensions and `principal` and `operation_id` tags.
+  - A non-String principal is recorded only by its class name.
+  - The presented credential is never logged: the gate's inputs are `sensitive:`, and the new
+    `Request#inspect`/`pretty_print` redact headers and body.
+- `[FEAT]` `Axn::OpenAPI::Request` now carries case-insensitive `headers` / `#header(name)`, which is
+  the interface core's auth strategies read.
+- `[BUGFIX]` HTTP tool calls are now stamped `invoked_via: openapi`. The Dispatcher now passes
+  `adapter: :openapi` to `Axn::Tools::Invoker`; before, OpenAPI traffic carried no entry-point
+  dimension, unlike axn-mcp/axn-ruby_llm.
+- `[INTERNAL]` The generated documents are validated against the OpenAPI 3.1 metaschema in the suite
+  (`json_schemer` dev dependency).
+- `[INTERNAL]` The Rails dummy app is bumped to Rails 8.1 (`load_defaults 8.1`), since axn requires
+  activesupport >= 8.1. It also gains a Bearer-gated `:credentials` mount plus controller coverage.
+
 - `[INTERNAL]` Cuts over to axn core's `Axn::Tools::AdapterSerialization` mixin (PRO-2996, shipped in
   `0.1.0-alpha.6`, which the gemspec floor is raised to accordingly). `declare_reject_opaque_exposed_values!
   default: true` replaces the hand-rolled `setting :reject_opaque_exposed_values, ...` (still `true`

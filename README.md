@@ -63,11 +63,13 @@ end
 ```ruby
 # config/routes.rb
 Rails.application.routes.draw do
-  mount Axn::OpenAPI.app => "/api"
+  mount Axn::OpenAPI.app(auth: Axn::Extensions::Auth::Bearer.new(keys: { "frontend" => -> { ENV.fetch("API_KEY") } })) => "/api"
 end
 ```
 
-`Axn::OpenAPI.app` defaults to every registered `:openapi` tool. **The mount point is the path
+`auth:` is required. Pass a strategy, or `auth: :none` to serve unauthenticated on purpose (see
+[Authentication](#authentication)). `Axn::OpenAPI.app` defaults to every registered `:openapi` tool
+on the default mount. **The mount point is the path
 prefix** — `mount ... => "/api"` means `ApproveLoan` is served at `POST /api/approve_loan/v1`, and
 the generated spec at `GET /api/openapi.json`. Every route is versioned: the path is
 `{mount}{path_prefix}/{tool}/v{n}`, where `n` is the Axn's `tool_version` (undeclared ⇒ `1`). There
@@ -76,10 +78,10 @@ Axn sharing the same `tool_name`) is addressable at its own `/v2` path alongside
 never in place of it. `curl`:
 
 ```bash
-curl -X POST http://localhost:3000/api/approve_loan/v1 -d '{"loan_id": 42}'
+curl -X POST http://localhost:3000/api/approve_loan/v1 -H "Authorization: Bearer $API_KEY" -d '{"loan_id": 42}'
 # => {"status":"approved"}
 
-curl http://localhost:3000/api/openapi.json
+curl -H "Authorization: Bearer $API_KEY" http://localhost:3000/api/openapi.json
 # => the OpenAPI 3.1 document
 ```
 
@@ -106,14 +108,27 @@ Owns routing: one `POST /<tool_name>/v<n>` route per registered tool *version*, 
 routing/filters.
 
 ```ruby
-Axn::OpenAPI.app(tools: nil, context: nil, path_prefix: nil, spec_path: nil)
+Axn::OpenAPI.app(auth:, mount: nil, tools: nil, authorize: nil, context: nil, public_spec: false,
+                 info: nil, path_prefix: nil, spec_path: nil)
 ```
 
-- **`tools:`** — defaults to `Axn::OpenAPI.tools` (every registered `:openapi` tool); pass an
-  explicit array (`[ApproveLoan, RejectLoan]`) to serve a subset.
-- **`context:`** — `->(env) { {...} }`, resolved per-request into the trusted `ambient_context` (see
-  [below](#ambient_context-the-authrequest-context-seam)). Defaults to an empty Hash.
-- **`path_prefix:`** / **`spec_path:`** — override the configured defaults for this app instance.
+- **`auth:`** is **required**. It takes a strategy, an Array of strategies (any one of them may
+  authenticate), or `:none`. See [Authentication](#authentication).
+- **`mount:`** takes a Symbol naming a mount, and the app serves the tools bound to that mount (see
+  [Mounts](#mounts-keeping-tool-sets-apart)). The default (nil) is the unnamed mount, which serves only
+  tools that name no mount.
+- **`tools:`** takes an explicit array (`[ApproveLoan, RejectLoan]`) to serve instead of the mount's
+  registered tools.
+- **`authorize:`** takes `->(principal, axn_class) { true/false }` and replaces the tool's
+  `allowed_callers` check (see [403](#authorization-403)).
+- **`context:`** takes `->(env) { {...} }` or `->(env, principal) { {...} }`, which is resolved into the
+  trusted `ambient_context` (see [below](#ambient_context-the-authrequest-context-seam)). It is evaluated
+  only when a tool is actually dispatched, and defaults to an empty Hash.
+- **`public_spec:`** set to true serves the OpenAPI document without authentication. By default the
+  document is gated like the tools.
+- **`info:`** takes `{ title:, version:, description: }`, which is merged over the configured
+  `info_*` for this mount's document.
+- **`path_prefix:`** / **`spec_path:`** override the configured defaults for this app instance.
 
 ### 2. `include Axn::OpenAPI::Controller`
 
@@ -168,6 +183,144 @@ also keeps your hand-rolled surface consistent with the mount's `/{tool}/v{n}` s
 API reads one way. (The gem can't do this for you here — it doesn't own controller routes — but the
 convention is the same one the mount enforces automatically.)
 
+## Authentication
+
+Every mount must say how it authenticates. The gem is **fail-closed**: `Axn::OpenAPI.app` raises at
+build time without `auth:`, and `auth: :none` is the only way to serve unauthenticated.
+
+Strategies come from axn core's `Axn::Extensions::Auth` (also used by axn-webhooks). The built-in
+one is a static API key:
+
+```ruby
+# `Authorization: Bearer <key>`; the principal is the key's name
+Axn::Extensions::Auth::Bearer.new(keys: { "data_pipeline" => -> { ENV.fetch("PIPELINE_API_KEY") } })
+
+# The raw value of a custom header
+Axn::Extensions::Auth::Bearer.new(keys: { "data_pipeline" => -> { ENV.fetch("PIPELINE_API_KEY") } }, header: "X-API-Key")
+```
+
+- **Key values.** A key can be a String, a Proc, or an Array of them. A Proc is resolved **on every
+  request**, so a rotated secret needs no restart. Listing the old and new key together overlaps a
+  rotation.
+- **Comparison.** Every key is compared in constant time.
+- **Misconfiguration.** A blank key raises (a 500, reported) rather than authenticating anyone.
+- **Redaction.** Keys never appear in `inspect`, `pp` or logs.
+
+Each request is **authenticated before it is routed**, so an unauthenticated caller gets `401` for
+every path, including unknown ones, and can't probe which tools exist. The 401 carries every
+strategy's challenge (`www-authenticate: Bearer`). The served OpenAPI document is gated the same
+way unless the mount passes `public_spec: true`.
+
+**Any strategy works.** A strategy is any object with `#call(request)` that returns a verdict: an
+`Axn::Extensions::Auth::Verdict`, anything answering `ok?`/`principal`, or a boolean. The request
+answers `#header(name)`. A JWT verifier written in your app, for example:
+
+```ruby
+jwt = ->(request) do
+  claims = MyJwt.verify(request.header("Authorization").to_s.delete_prefix("Bearer "), aud: "os-integration-credentials")
+  claims ? Axn::Extensions::Auth::Verdict.ok(claims["iss"]) : Axn::Extensions::Auth::CREDENTIALS_MISMATCH
+end
+
+Axn::OpenAPI.app(
+  auth: [api_key, Axn::OpenAPI.documented_auth(jwt, security_scheme: { type: "http", scheme: "bearer", bearerFormat: "JWT" }, name: "jwt")],
+  mount: :credentials,
+)
+```
+
+`documented_auth` pairs a strategy the gem can't describe on its own with the security scheme that
+describes it in the document. `Bearer` needs no wrapping: it documents itself as `http`/`bearer`, or
+as `apiKey` for a custom header. A strategy the gem can't describe is refused at build time, so the
+document never omits how the mount authenticates.
+
+**Return a String principal id** (or a Symbol) from a custom strategy. Allowlists match on it, and
+logs record it. Any other principal object is recorded only by its class name, so claims never leak.
+
+### Authorization (403)
+
+A tool can restrict which authenticated principals may call it:
+
+```ruby
+class IntegrationCredentials
+  include Axn
+  tool openapi: { mount: :credentials, allowed_callers: ["data_pipeline"] }
+  # ...
+end
+```
+
+An authenticated caller who isn't on the list gets `403 {"error": {"message": "Forbidden"}}`. The
+check runs before the verb check, so a forbidden caller learns nothing more about the path. A tool
+without `allowed_callers` admits any authenticated caller.
+
+Pass `authorize: ->(principal, axn_class) { ... }` on the mount to replace that check. The default is
+public as `Axn::OpenAPI.allowed_caller?(principal, axn_class)`, so a custom policy can compose with
+it.
+
+These combinations fail at build time instead of at request time:
+
+- a tool with `allowed_callers` on an `auth: :none` mount;
+- `authorize:` with `auth: :none`;
+- an `allowed_callers` entry that none of the mount's strategies can authenticate as. This check is
+  skipped for a strategy that can't list its principals, such as a JWT verifier.
+
+The controller skin enforces the same allowlist. Pass `render_axn(Tool, principal: ...)` with the
+caller your controller authenticated. Calling `render_axn` on a tool that declares `allowed_callers`
+without a `principal:` raises rather than silently ignoring the list.
+
+### Observability
+
+Authentication and authorization run as Axns (`Axn::OpenAPI::Authenticate` / `Axn::OpenAPI::Authorize`),
+so every request emits axn's own `axn.call` event, OpenTelemetry span and log line, including a
+`401`/`403` that never reaches a tool. They carry a `mount` dimension, a `reason` dimension
+(`credentials_missing` / `credentials_mismatch`), a `principal` tag and an `operation_id` tag.
+
+Every call on a mount is stamped `invoked_via: openapi`, on both the gate Axns and the tool. For an
+audit trail of what was read, declare `tag`/`dimension` on the tool itself:
+
+```ruby
+class IntegrationCredentials
+  include Axn
+  expects :caller_id, on: :ambient_context, type: String
+  expects :company_uuid, type: String
+  tag :caller_id, :caller_id
+  tag :company_uuid, :company_uuid
+end
+
+Axn::OpenAPI.app(auth: pipeline_key, mount: :credentials, context: ->(_env, principal) { { caller_id: principal } })
+```
+
+The presented credential is never logged: the gate's inputs are `sensitive:`, and `Request#inspect`
+redacts headers and body. The authenticated principal is also available to Rack middleware as
+`env["axn.openapi.principal"]`.
+
+## Mounts: keeping tool sets apart
+
+One app can serve several independent mounts, each with its own tools, auth, `info` and document.
+Bind a tool to a mount on the Axn itself:
+
+```ruby
+class IntegrationCredentials
+  include Axn
+  tool openapi: { mount: :credentials }
+end
+
+mount Axn::OpenAPI.app(auth: :none) => "/api"            # the default mount: never serves IntegrationCredentials
+mount Axn::OpenAPI.app(auth: pipeline_key, mount: :credentials, info: { title: "Credentials API" }) => "/internal/credentials"
+```
+
+- **A mount serves only its own tools.** `Axn::OpenAPI.app(mount: :credentials)` serves exactly the
+  tools that declare `mount: :credentials`. The default mount serves only tools that name no mount.
+- **A mismatched explicit tool fails at boot.** Passing `tools:` that includes a tool declared for a
+  different mount raises. An explicit list of tools that declare no mount works on any mount (an
+  ad-hoc mount).
+- **One tool, one mount.** Building a second mount that would serve a tool another mount already
+  serves raises at boot. Rebuilding the same mount replaces its claim, so Rails route reloading works.
+  Test suites that build many apps should call `Axn::OpenAPI.reset_mounts!` between examples.
+
+**Keep restricted tools out of `app/agent_tools/`.** That directory is the default `tool_roots` for
+*every* axn adapter, so a tool placed there is also served over MCP and ruby_llm. Put a credentials tool
+somewhere else, such as `app/credentials_tools/`, and declare `tool openapi: { mount: :credentials }`.
+To bind a whole folder, give its tools a shared base class that calls `configure(:openapi) { |c| c.mount = :credentials }`.
+
 ## `ambient_context`: the auth/request-context seam
 
 Axns don't know about HTTP, sessions, or `current_user` — those are request-scoped, and a plain
@@ -175,9 +328,9 @@ Axn should stay callable outside a request entirely. `ambient_context` is the se
 trusted, request-derived values that flows into the Axn's own `expects ..., on: :ambient_context`
 fields, same as any other adapter (`axn-mcp`, `axn-ruby_llm`) uses.
 
-**This gem offers the hook; it does not own auth.** It never authenticates a request itself — you
-decide what goes into `ambient_context` (via `App#context` or the `ambient_context:` kwarg to
-`render_axn`), typically after your own auth/session middleware has already run.
+**Authentication identifies the caller; `ambient_context` is how that reaches the Axn.** Nothing is
+injected automatically. You decide what goes into `ambient_context`: the mount's `context:` (whose
+second parameter is the authenticated principal) or the `ambient_context:` kwarg to `render_axn`.
 
 ```ruby
 class ApproveLoan
@@ -192,8 +345,9 @@ class ApproveLoan
   end
 end
 
-# Mount skin — read a header/session value per request:
-Axn::OpenAPI.app(context: ->(env) { { approver_id: env["rack.session"]["user_id"] } })
+# Mount skin — read a header/session value per request, or use the authenticated principal:
+Axn::OpenAPI.app(auth: :none, context: ->(env) { { approver_id: env["rack.session"]["user_id"] } })
+Axn::OpenAPI.app(auth: api_key, context: ->(_env, principal) { { approver_id: principal } })
 
 # Controller skin — build it from the controller's own auth:
 render_axn(ApproveLoan, ambient_context: { approver_id: current_user.id })
@@ -218,9 +372,9 @@ convention `axn-mcp`/`axn-ruby_llm` use:
 - **`tool except: :openapi`** — keeps a directory grant but removes `:openapi`. `tool false` opts
   out of every adapter.
 
-`Axn::OpenAPI.tools` (`Axn::Tools.for(:openapi, all_versions: true)`) enumerates the current
-membership across every declared version of each tool — the default source for `.app`/`.spec`
-when you don't pass an explicit `tools:` list.
+`Axn::OpenAPI.tools(mount: nil)` enumerates the current membership bound to a mount, across every
+declared version of each tool (`Axn::Tools.for(:openapi, all_versions: true)` filtered by each tool's
+`mount`). It is the default source for `.app`/`.spec` when you don't pass an explicit `tools:` list.
 
 ## Configuration
 
@@ -234,6 +388,8 @@ Axn::OpenAPI.config.path_prefix = "/axns"
 | `spec_path` | `"/openapi.json"` | Where the mount skin serves the generated OpenAPI document (`GET`). |
 | `reject_undeclared_inputs` | `false` (lenient) | `false`: unknown top-level body keys are silently ignored (matches JSON Schema's `additionalProperties`-permitted posture; forward-compatible across client/server version skew). `true`: an unknown key fails as a 400, same bucket as any other input-contract violation, and the published request schema tightens to `additionalProperties: false` to match. A typo on a *required* field always fails regardless of this setting. Settable per tool — see [Per-tool overrides](#per-tool-overrides). |
 | `reject_opaque_exposed_values` | `true` (strict) | `true`: an exposed value with no JSON rendering *its author declared* is a 500 rather than a body containing `"#<User:0x...>"` (or, in Rails, an instance-variable dump). `false`: that rendering ships, matching axn-mcp's default. See [Rejecting opaque exposed values](#rejecting-opaque-exposed-values-reject_opaque_exposed_values). |
+| `mount` | `nil` | Per tool (`tool openapi: { mount: :name }`): which mount serves it. See [Mounts](#mounts-keeping-tool-sets-apart). |
+| `allowed_callers` | `nil` | Per tool: principal ids allowed to call it (non-empty Array); `nil` admits any authenticated caller. See [403](#authorization-403). |
 | `info_title` | `"Axn API"` | OpenAPI `info.title`. |
 | `info_version` | `"1.0.0"` | OpenAPI `info.version`. |
 | `info_description` | `nil` | OpenAPI `info.description`; omitted from the document when nil. |
@@ -241,8 +397,8 @@ Axn::OpenAPI.config.path_prefix = "/axns"
 
 ### Per-tool overrides
 
-The two behavioral knobs — `reject_undeclared_inputs` and `reject_opaque_exposed_values` — are also
-settable **per tool** via `configure(:openapi)`, matching axn-mcp's convention. The per-class value wins
+`mount` and `allowed_callers` describe a tool, so they are set per tool, like this. The two behavioral
+knobs, `reject_undeclared_inputs` and `reject_opaque_exposed_values`, are also settable **per tool** via `configure(:openapi)`, matching axn-mcp's convention. The per-class value wins
 over the gem-wide one, so one endpoint can differ without loosening (or tightening) the whole API:
 
 ```ruby
@@ -324,6 +480,8 @@ find out whether a call succeeded.
 | --- | --- | --- |
 | `200` | Success | Bare `output_schema` object — the Axn's `exposes`, no wrapper |
 | `400` | Malformed JSON request body, **or** an inbound validation failure (`InboundValidationError`) — "you sent the wrong data" | `{"error": {"message": "...", "field_errors": [...]}}` |
+| `401` | Authentication failed — no or a wrong credential (checked before routing, so any path on an authenticated mount). Carries the strategies' `www-authenticate` challenge | `{"error": {"message": "Unauthorized"}}` |
+| `403` | An authenticated principal not allowed to call this tool (`allowed_callers` / `authorize:`) | `{"error": {"message": "Forbidden"}}` |
 | `404` | Path maps to no registered tool, **or** a known tool at an unregistered version — mount skin only. The latter's message names the latest available version's path | `{"error": {"message": "..."}}` |
 | `405` | Known tool path, wrong HTTP verb — every route is `POST` (mount skin only) | `{"error": {"message": "..."}}` |
 | `422` | A well-formed request the Axn itself refused via `fail!` — "we understood you, but can't complete the operation" | `{"error": {"message": "<the fail! message, verbatim>"}}` |
@@ -369,9 +527,18 @@ A `400` additionally carries `field_errors`:
 ## Generating the spec directly
 
 ```ruby
-Axn::OpenAPI.spec(tools: nil, path_prefix: nil, info: nil)
-# => the OpenAPI 3.1 document as a Hash (tools: defaults to Axn::OpenAPI.tools)
+Axn::OpenAPI.spec(mount: nil, tools: nil, auth: nil, authorize: nil, info: nil, path_prefix: nil)
+# => the OpenAPI 3.1 document as a Hash (tools: defaults to Axn::OpenAPI.tools(mount:))
 ```
+
+Pass `auth:` (and `authorize:`) to document security exactly as `.app` would:
+
+- `components.securitySchemes` holds one entry per strategy.
+- A top-level `security` lists them as alternatives.
+- Every operation documents `401`.
+- `403` is documented wherever a tool declares `allowed_callers`, or on every operation when
+  `authorize:` is given.
+- Without `auth:`, no security is documented.
 
 One `POST` path per tool *version* (`/{tool}/v{n}`; `operationId` is `{tool}_v{n}`, `summary` from
 `description`), `requestBody`/`200` schemas taken verbatim from that version's own
@@ -382,7 +549,7 @@ extension (an array).
 ## Requirements
 
 - Ruby >= 3.2.1
-- [axn](https://github.com/teamshares/axn) >= 0.1.0-alpha.4.3, < 0.2.0
+- [axn](https://github.com/teamshares/axn) — the prerelease that ships `Axn::Extensions::Auth` (see the gemspec), < 0.2.0
 - [rack](https://github.com/rack/rack) >= 2.2
 
 ## Development

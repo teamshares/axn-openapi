@@ -46,4 +46,30 @@ RSpec.describe Axn::OpenAPI::Controller do
     c.render_axn(ContextEchoTool)
     expect(c.rendered[:status]).to eq(400)
   end
+
+  describe "a tool that declares allowed_callers" do
+    it "refuses to dispatch without a principal: — the controller skin must not fail open" do
+      c = controller_class.new('{"company_uuid":"c-1"}')
+      expect { c.render_axn(CredentialsTool) }.to raise_error(Axn::OpenAPI::Error, /CredentialsTool.*principal:/)
+    end
+
+    it "dispatches an allowed principal" do
+      c = controller_class.new('{"company_uuid":"c-1"}')
+      c.render_axn(CredentialsTool, principal: "data_pipeline", ambient_context: { caller_id: "data_pipeline" })
+      expect(c.rendered[:status]).to eq(200)
+    end
+
+    it "renders 403 for a principal off the list, recording the denial" do
+      c = controller_class.new('{"company_uuid":"c-1"}')
+      events = capture_axn_calls { c.render_axn(CredentialsTool, principal: "ops") }
+      expect(c.rendered).to eq(json: { "error" => { "message" => "Forbidden" } }, status: 403)
+      expect(axn_call_for(Axn::OpenAPI::Authorize, events)[:outcome]).to eq("failure")
+    end
+  end
+
+  it "checks a principal: against a tool with no allowlist too (any principal is admitted)" do
+    c = controller_class.new("")
+    c.render_axn(CredentialsPingTool, principal: "anyone")
+    expect(c.rendered[:status]).to eq(200)
+  end
 end
