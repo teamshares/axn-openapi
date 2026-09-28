@@ -29,6 +29,7 @@ module Axn
         @tools = (tools ? explicit_tools!(tools) : Axn::OpenAPI.tools(mount:)).dup.freeze
         @authorize = authorize
         @context = context || ->(_env) { {} }
+        @context_takes_principal = takes_second_argument?(@context)
         @public_spec = public_spec
         check_access_policy!
 
@@ -101,11 +102,17 @@ module Axn
         end
       end
 
-      # A one-parameter `context:` gets the env (the original shape); anything taking more also gets
-      # the principal. Arity is read off the callable itself — Proc#call's own arity is always -1.
+      # A `context:` that can take a second positional argument (a required or optional one, or a
+      # splat) also gets the principal; anything else gets the env alone (the original shape) — so
+      # `->(env = nil)` / `def call(env = nil)` keep working. Read off `parameters`, not `arity`:
+      # an optional argument makes arity negative whether or not a second one would be accepted.
       def ambient_context_for(env, principal)
-        callable = @context.respond_to?(:arity) ? @context : @context.method(:call)
-        callable.arity == 1 ? @context.call(env) : @context.call(env, principal)
+        @context_takes_principal ? @context.call(env, principal) : @context.call(env)
+      end
+
+      def takes_second_argument?(callable)
+        params = (callable.respond_to?(:parameters) ? callable : callable.method(:call)).parameters
+        params.any? { |kind, _| kind == :rest } || params.count { |kind, _| %i[req opt].include?(kind) } >= 2
       end
 
       def explicit_tools!(tools)

@@ -93,6 +93,24 @@ RSpec.describe "App authentication" do
       expect(json(res)).to eq("company_uuid" => "c-1", "caller_id" => "data_pipeline")
     end
 
+    it "keeps calling a context: that takes at most one (optional) argument with the env alone" do
+      optional = ->(env = nil) { { caller_id: env&.fetch(Axn::OpenAPI::PRINCIPAL_ENV_KEY) } }
+      callable = Class.new { def call(env = nil) = { caller_id: env&.fetch(Axn::OpenAPI::PRINCIPAL_ENV_KEY) } }.new
+      [optional, callable].each do |context|
+        Axn::OpenAPI.reset_mounts!
+        res = post(credentials_app(context:), "/credentials_tool/v1", token: "pipeline-key")
+        expect(json(res)).to eq("company_uuid" => "c-1", "caller_id" => "data_pipeline")
+      end
+    end
+
+    it "hands the principal to a context: taking a splat or an optional second argument" do
+      [->(*args) { { caller_id: args[1] } }, ->(_env, principal = nil) { { caller_id: principal } }].each do |context|
+        Axn::OpenAPI.reset_mounts!
+        res = post(credentials_app(context:), "/credentials_tool/v1", token: "pipeline-key")
+        expect(json(res)).to eq("company_uuid" => "c-1", "caller_id" => "data_pipeline")
+      end
+    end
+
     it "evaluates context: only when a tool is actually dispatched" do
       calls = 0
       app = credentials_app(context: ->(_env) { calls += 1 and {} })

@@ -14,7 +14,9 @@
   - **Old:** it ran on every request, including 404/405/spec-document requests. **New:** it runs
     only when a tool is actually dispatched.
   - A two-parameter `context: ->(env, principal)` receives the authenticated principal. A
-    one-parameter `->(env)` works as before.
+    one-parameter `->(env)` works as before. Detection reads the callable's `parameters`, not its
+    arity: one that can take a second positional argument (required, optional, or a splat) gets
+    the principal, so `->(env = nil)` / `def call(env = nil)` still receive the env alone.
 - `[BREAKING]` Changes to the internal `Router`'s interface:
   - It now maps a path to its `RouteEntry` rather than to the bare Axn.
   - `#route` takes `authorize:`, and accepts a callable `ambient_context:`.

@@ -121,7 +121,8 @@ Axn::OpenAPI.app(auth:, mount: nil, tools: nil, authorize: nil, context: nil, pu
   registered tools.
 - **`authorize:`** takes `->(principal, axn_class) { true/false }` and replaces the tool's
   `allowed_callers` check (see [403](#authorization-403)).
-- **`context:`** takes `->(env) { {...} }` or `->(env, principal) { {...} }`, which is resolved into the
+- **`context:`** takes `->(env) { {...} }` or `->(env, principal) { {...} }` (the principal is passed
+  whenever the callable can take a second positional argument), which is resolved into the
   trusted `ambient_context` (see [below](#ambient_context-the-authrequest-context-seam)). It is evaluated
   only when a tool is actually dispatched, and defaults to an empty Hash.
 - **`public_spec:`** set to true serves the OpenAPI document without authentication. By default the
