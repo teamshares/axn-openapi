@@ -63,7 +63,9 @@ RSpec.describe Axn::OpenAPI::Controller do
       c = controller_class.new('{"company_uuid":"c-1"}')
       events = capture_axn_calls { c.render_axn(CredentialsTool, mount: :credentials, principal: "ops") }
       expect(c.rendered).to eq(json: { "error" => { "message" => "Forbidden" } }, status: 403)
-      expect(axn_call_for(Axn::OpenAPI::Authorize, events)[:outcome]).to eq("failure")
+      denial = axn_call_for(Axn::OpenAPI::Authorize, events)
+      expect(denial[:outcome]).to eq("failure")
+      expect(denial[:dimensions]).to include(mount: "credentials", invoked_via: "openapi")
     end
   end
 

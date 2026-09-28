@@ -24,7 +24,7 @@ module Axn
       # controller can do by naming the class.
       def render_axn(axn_class, ambient_context: {}, principal: UNSET, mount: nil)
         _axn_openapi_check_mount!(axn_class, mount)
-        dispatch = Axn::Extensions::InvokedVia.with(:openapi) { _axn_openapi_dispatch(axn_class, ambient_context, principal) }
+        dispatch = Axn::Extensions::InvokedVia.with(:openapi) { _axn_openapi_dispatch(axn_class, ambient_context, principal, mount) }
         # Render boundary: guarantee the body is JSON-encodable before the renderer touches it, so an
         # unencodable value maps to the documented generic 500 rather than raising in `render json:`.
         dispatch = Dispatcher.ensure_encodable(dispatch)
@@ -49,7 +49,7 @@ module Axn
               end
       end
 
-      def _axn_openapi_dispatch(axn_class, ambient_context, principal)
+      def _axn_openapi_dispatch(axn_class, ambient_context, principal, mount)
         if principal.equal?(UNSET)
           if Axn::OpenAPI.resolve_override_for(axn_class, :allowed_callers)
             raise Axn::OpenAPI::Error,
@@ -57,7 +57,8 @@ module Axn
                   "controller authenticated, so the allowlist is enforced"
           end
         else
-          denied = Gate.authorization_dispatch(principal:, axn_class:, operation_id: RouteTable.operation_id(axn_class))
+          # `mount:` so the denial is recorded under the mount it was served for, not the default one.
+          denied = Gate.authorization_dispatch(principal:, axn_class:, operation_id: RouteTable.operation_id(axn_class), mount:)
           return denied if denied
         end
 

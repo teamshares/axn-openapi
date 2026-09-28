@@ -57,7 +57,9 @@
   - A failed build leaves no claim behind. Tests can clear the registry with
     `Axn::OpenAPI.reset_mounts!`.
   - `render_axn` refuses a mount-bound tool unless it is passed the matching `mount:`, so a
-    controller can't serve a mount's tool past that mount's auth by accident.
+    controller can't serve a mount's tool past that mount's auth by accident. That `mount:` also
+    labels the controller's `Authorize` event, so a controller denial is recorded under its mount
+    rather than `default`.
   - Each mount takes its own `info:` (merged over `info_*`).
 - `[FEAT]` The generated document describes the mount's auth: `components.securitySchemes` plus a
   top-level `security` that lists the strategies as alternatives.
