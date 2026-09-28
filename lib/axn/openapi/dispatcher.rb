@@ -39,6 +39,9 @@ module Axn
 
       def call(axn_class:, params:, ambient_context: {})
         invoker = Axn::Tools::Invoker.new(
+          # Stamps `invoked_via: "openapi"` on the whole call tree (axn.call event, span, logs), so
+          # HTTP tool traffic is separable from direct calls — the same key axn-mcp/ruby_llm pass.
+          adapter: :openapi,
           user_facing_input_errors: true,
           # Per-tool resolution, not a bare config read — SpecGenerator resolves the same way, so the
           # published `additionalProperties` and this runtime check can't disagree for a tool that

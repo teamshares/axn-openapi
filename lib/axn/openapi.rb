@@ -40,6 +40,22 @@ module Axn
     # `configure(:openapi) { |c| c.reject_opaque_exposed_values = false }` without loosening the API.
     declare_reject_opaque_exposed_values! default: true
 
+    # Which mount serves a tool. `nil` (the default) is the unnamed mount; a Symbol binds the tool to
+    # `Axn::OpenAPI.app(mount: <that name>, …)` and keeps it OFF every other mount — declared on the
+    # Axn itself (`tool openapi: { mount: :credentials }`) so the binding is visible where it matters.
+    setting :mount, default: nil, overridable: true,
+                    validate: ->(v) { v.nil? || v.is_a?(Symbol) || "mount must be a Symbol naming the mount (or nil for the default mount)" }
+
+    # Principal ids allowed to call a tool (the 403 check); `nil` admits any authenticated caller.
+    # Compared against the id a mount's auth strategy authenticated the request as (`Auth::Bearer`'s
+    # key names, say). Empty is refused: an allowlist admitting nobody is a mistake, not a policy.
+    setting :allowed_callers, default: nil, overridable: true,
+                              validate: lambda { |v|
+                                v.nil? ||
+                                  (v.is_a?(Array) && v.any? && v.all? { |c| c.is_a?(String) || c.is_a?(Symbol) }) ||
+                                  "allowed_callers must be a non-empty Array of principal ids (String/Symbol), or nil"
+                              }
+
     # OpenAPI `info` object (title + version are required by the spec format).
     setting :info_title, default: "Axn API"
     setting :info_version, default: "1.0.0"
