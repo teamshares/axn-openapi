@@ -36,9 +36,15 @@ RSpec.describe "mounts" do
 
     it "lets a rebuild of the same mount from the same place replace its claim (Rails route reloading)" do
       build = ->(tools) { Axn::OpenAPI.app(auth: :none, mount: :adhoc, tools:) }
-      build.call([EchoTool])
-      build.call([RefuseTool])
+      [[EchoTool], [RefuseTool]].each { |tools| build.call(tools) }
       expect { Axn::OpenAPI.app(auth: :none, tools: [EchoTool]) }.not_to raise_error
+    end
+
+    it "refuses one mount built twice through a shared helper called from two places" do
+      build = ->(auth) { Axn::OpenAPI.app(auth:, mount: :credentials) }
+      build.call(Axn::Extensions::Auth::Bearer.new(keys: { "data_pipeline" => "strong" }))
+      expect { build.call(Axn::Extensions::Auth::Bearer.new(keys: { "data_pipeline" => "weak" })) }
+        .to raise_error(Axn::OpenAPI::Error, /mount :credentials is already built at .*mounts_spec\.rb:\d+/i)
     end
 
     it "refuses building one mount a second time from somewhere else (two live apps, one name)" do

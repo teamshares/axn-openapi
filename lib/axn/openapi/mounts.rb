@@ -6,11 +6,14 @@ module Axn
     # with different auth (a credentials tool reachable through a general-purpose mount is exactly the
     # leak named mounts exist to prevent). Keyed by mount name (`nil` = the default mount).
     #
-    # Each claim remembers WHERE the mount was built (the caller's file:line). A rebuild from the same
-    # site REPLACES the claim — that is what Rails route reloading does — while building the same
-    # mount again from anywhere else raises: two live apps under one name would otherwise both serve
-    # its tools, each with its own auth. Tools are identified by name, so a reloaded class still
-    # collides with its previous self's claim.
+    # Each claim remembers WHERE the mount was built: the chain of application frames that led to the
+    # build (the routes file line, plus any helper of the app's own it went through), stopping at the
+    # first frame inside a gem or Ruby itself. A rebuild through the same chain REPLACES the claim —
+    # that is what Rails route reloading does — while building the same mount again through any other
+    # chain raises: two live apps under one name would otherwise both serve its tools, each with its
+    # own auth. The whole chain, not just the innermost frame, so a shared `build_credentials_app`
+    # helper called from two places is two builds rather than one "reload". Tools are identified by
+    # name, so a reloaded class still collides with its previous self's claim.
     module Mounts
       Claim = Data.define(:site, :tools)
 
@@ -48,10 +51,29 @@ module Axn
 
       def reset! = @lock.synchronize { @claims = {} }
 
-      # The first frame outside this gem — the routes file (or spec) that built the app.
+      # The application frames that built the app: skip this gem's own frames, then keep every frame
+      # up to the first one inside an installed gem or Ruby's own library (actionpack's `draw`,
+      # rspec, rack) — below that the stack differs between boot and a reload, so it can't be part of
+      # the identity.
       def build_site
-        frame = caller_locations.find { |location| !File.expand_path(location.path).start_with?(LIB_DIR) }
-        frame ? "#{frame.path}:#{frame.lineno}" : "(unknown)"
+        frames = caller_locations.map { |location| [File.expand_path(location.path), location] }
+                                 .drop_while { |path, _| path.start_with?(LIB_DIR) }
+                                 .take_while { |path, location| !library_frame?(location.path, path) }
+        return "(unknown)" if frames.empty?
+
+        frames.map { |_, location| "#{location.path}:#{location.lineno}" }.join(" via ")
+      end
+
+      def library_frame?(raw_path, path)
+        raw_path.start_with?("<internal:") || library_dirs.any? { |dir| path.start_with?(dir) }
+      end
+
+      def library_dirs
+        @library_dirs ||= begin
+          dirs = Gem.path + [RbConfig::CONFIG["rubylibdir"], RbConfig::CONFIG["rubyarchdir"]]
+          dirs << Bundler.bundle_path.to_s if defined?(Bundler) && Bundler.respond_to?(:bundle_path)
+          dirs.compact.map { |dir| File.join(File.expand_path(dir), "") }.uniq.freeze
+        end
       end
 
       def identity(axn) = axn.name || axn.inspect

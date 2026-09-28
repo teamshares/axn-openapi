@@ -59,4 +59,10 @@ RSpec.describe "a Bearer-gated credentials mount inside Rails" do
     post "/credentials/read", '{"company_uuid":"c-1"}', "CONTENT_TYPE" => "application/json"
     expect(last_response.status).to eq(200)
   end
+
+  it "survives a route reload: rebuilding each mount from routes.rb replaces its claim" do
+    expect { Rails.application.reload_routes! }.not_to raise_error
+    read(token: "pipeline-key")
+    expect(last_response.status).to eq(200)
+  end
 end

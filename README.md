@@ -333,6 +333,10 @@ mount Axn::OpenAPI.app(auth: pipeline_key, mount: :credentials, info: { title: "
   different place, because two live apps under one name could otherwise serve its tools with
   different auth. Give each ad-hoc mount its own `mount:` name.
 - **Reloads.** Rebuilding a mount from the same place (Rails route reloading) replaces its claim.
+  "The same place" is the whole chain of your application's frames that led to the build, not just
+  the innermost one. So a shared helper that builds a mount, called from two different lines, is
+  two builds and raises. Calling it twice from one line, such as inside a loop, looks the same as a
+  reload and replaces the claim.
 - **Tests.** Suites that build many apps should call `Axn::OpenAPI.reset_mounts!` between examples.
 
 **Keep restricted tools out of `app/agent_tools/`.** That directory is the default `tool_roots` for

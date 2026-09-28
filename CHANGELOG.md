@@ -54,6 +54,10 @@
   - It also refuses building the same mount twice from different call sites, so two live apps under
     one name can't serve its tools with different auth. A rebuild from the same site replaces the
     claim, which keeps Rails route reloading safe.
+  - The "site" is the chain of application frames leading to the build, up to the first frame
+    inside an installed gem or Ruby's own library. So a shared helper building one mount from two
+    call sites raises, instead of passing as a reload. A same-line repeat, such as a loop, still
+    replaces the claim.
   - A failed build leaves no claim behind. Tests can clear the registry with
     `Axn::OpenAPI.reset_mounts!`.
   - `render_axn` refuses a mount-bound tool unless it is passed the matching `mount:`, so a

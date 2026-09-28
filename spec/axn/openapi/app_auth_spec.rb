@@ -63,8 +63,9 @@ RSpec.describe "App authentication" do
     end
 
     it "authenticates before routing, so an unknown path can't be probed for existence" do
-      expect(post(credentials_app, "/nope/v1").status).to eq(401)
-      expect(post(credentials_app, "/nope/v1", token: "ops-key").status).to eq(404)
+      app = credentials_app
+      expect(post(app, "/nope/v1").status).to eq(401)
+      expect(post(app, "/nope/v1", token: "ops-key").status).to eq(404)
     end
 
     it "gates the served OpenAPI document by default" do
@@ -153,8 +154,9 @@ RSpec.describe "App authentication" do
       output = StringIO.new
       logger = Logger.new(output)
       allow(Axn.config).to receive(:logger).and_return(logger)
-      post(credentials_app, "/credentials_tool/v1", token: "pipeline-key")
-      post(credentials_app, "/credentials_tool/v1", token: "wrong-secret-token")
+      app = credentials_app
+      post(app, "/credentials_tool/v1", token: "pipeline-key")
+      post(app, "/credentials_tool/v1", token: "wrong-secret-token")
       expect(output.string).not_to include("pipeline-key")
       expect(output.string).not_to include("wrong-secret-token")
     end
