@@ -141,5 +141,6 @@ require_relative "openapi/gate"
 require_relative "openapi/route_table"
 require_relative "openapi/router"
 require_relative "openapi/app"
+require_relative "openapi/railtie" if defined?(Rails::Railtie)
 require_relative "openapi/controller"
 require_relative "openapi/spec_generator"

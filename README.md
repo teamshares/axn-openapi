@@ -334,11 +334,14 @@ mount Axn::OpenAPI.app(auth: pipeline_key, mount: :credentials, info: { title: "
   mount already serves raises at boot. So does building the same mount a second time from a
   different place, because two live apps under one name could otherwise serve its tools with
   different auth. Give each ad-hoc mount its own `mount:` name.
-- **Reloads.** Rebuilding a mount from the same place (Rails route reloading) replaces its claim.
-  "The same place" is the whole chain of your application's frames that led to the build, not just
-  the innermost one. So a shared helper that builds a mount, called from two different lines, is
-  two builds and raises. Calling it twice from one line, such as inside a loop, looks the same as a
-  reload and replaces the claim.
+- **Reloads.** Under Rails, a mount built while routes are drawn belongs to that route set, and
+  clearing the route set releases it. Every route reload clears before it redraws, so reloading
+  after an edit that moves the mount's line works. Building one mount twice within a single draw
+  raises, even from the same line inside a loop. Outside a route draw, rebuilding from the same
+  place replaces the claim. "The same place" is the whole chain of your application's frames that
+  led to the build, so a shared helper called from two different lines is two builds and raises.
+  The Rails hook is installed by a Railtie, which requires `axn-openapi` to load after Rails, as
+  `Bundler.require` does.
 - **Tests.** Suites that build many apps should call `Axn::OpenAPI.reset_mounts!` between examples.
 
 **Keep restricted tools out of `app/agent_tools/`.** That directory is the default `tool_roots` for

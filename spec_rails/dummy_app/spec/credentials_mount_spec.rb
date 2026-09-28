@@ -65,4 +65,31 @@ RSpec.describe "a Bearer-gated credentials mount inside Rails" do
     read(token: "pipeline-key")
     expect(last_response.status).to eq(200)
   end
+
+  describe "route redraws" do
+    after { Rails.application.reload_routes! }
+
+    # A local, not a method: the draw block is instance_exec'd on the route Mapper.
+    let(:build) { -> { Axn::OpenAPI.app(auth: CREDENTIALS_AUTH, mount: :credentials, tools: [IntegrationCredentials]) } }
+
+    it "releases a cleared route set's claims, so an edit that shifts the mount's line still reloads" do
+      build = self.build
+      Rails.application.routes.draw { mount build.call => "/internal/credentials" }
+      expect do
+        Rails.application.routes.draw do
+          get "/added_above", to: "credentials#read"
+          mount build.call => "/internal/credentials"
+        end
+      end.not_to raise_error
+    end
+
+    it "still refuses one mount built twice within a single draw, even from one line" do
+      build = self.build
+      expect do
+        Rails.application.routes.draw do
+          %w[/a /b].each { |at| mount build.call => at }
+        end
+      end.to raise_error(Axn::OpenAPI::Error, /mount :credentials is already built/i)
+    end
+  end
 end

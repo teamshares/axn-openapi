@@ -14,8 +14,14 @@ module Axn
     # own auth. The whole chain, not just the innermost frame, so a shared `build_credentials_app`
     # helper called from two places is two builds rather than one "reload". Tools are identified by
     # name, so a reloaded class still collides with its previous self's claim.
+    #
+    # Under Rails, a mount built while a route set is being drawn is instead tied to THAT route set
+    # (see Railtie): clearing the route set — which every route reload does before redrawing —
+    # releases its claims, since the apps it routed to are no longer live. Such a claim is never
+    # replaced by site, so an edit that shifts the mount's line still reloads cleanly, while building
+    # one mount twice within a single draw (even from one line, in a loop) raises.
     module Mounts
-      Claim = Data.define(:site, :tools)
+      Claim = Data.define(:site, :tools, :route_set)
 
       LIB_DIR = File.expand_path("..", __dir__)
       private_constant :LIB_DIR
@@ -25,11 +31,11 @@ module Axn
 
       module_function
 
-      def claim!(mount, tools, site:)
+      def claim!(mount, tools, site:, route_set: current_route_set)
         ids = tools.to_h { |axn| [identity(axn), axn] }
         @lock.synchronize do
           existing = @claims[mount]
-          if existing && existing.site != site
+          if existing && !rebuild?(existing, site, route_set)
             raise Axn::OpenAPI::Error,
                   "#{label(mount).capitalize} is already built at #{existing.site}; building it again at #{site} " \
                   "would leave two live apps serving its tools. Build each mount once (give an ad-hoc mount its own mount: name)"
@@ -45,11 +51,29 @@ module Axn
                   "#{shared.first} is already served by #{label(other)}; building #{label(mount)} would serve it " \
                   "from two mounts. Bind it to one with `tool openapi: { mount: ... }`, or drop it from one mount's tools:"
           end
-          @claims[mount] = Claim.new(site:, tools: ids.freeze)
+          @claims[mount] = Claim.new(site:, tools: ids.freeze, route_set:)
         end
       end
 
+      # Same site outside any route draw: a reload by a means this registry can't observe, so the new
+      # build replaces the old. A claim tied to a route set is only ever released by clearing that set.
+      def rebuild?(existing, site, route_set) = existing.route_set.nil? && route_set.nil? && existing.site == site
+
       def reset! = @lock.synchronize { @claims = {} }
+
+      # Runs the block as the drawing of `route_set`: apps built inside it are claimed on its behalf.
+      def drawing(route_set)
+        stack = (Thread.current[:axn_openapi_drawing] ||= [])
+        stack.push(route_set)
+        yield
+      ensure
+        stack.pop
+      end
+
+      def current_route_set = Thread.current[:axn_openapi_drawing]&.last
+
+      # Drops every claim made while drawing `route_set` — it is being cleared, so its apps are gone.
+      def release!(route_set) = @lock.synchronize { @claims.reject! { |_, claim| claim.route_set.equal?(route_set) } }
 
       # The application frames that built the app: skip this gem's own frames, then keep every frame
       # up to the first one inside an installed gem or Ruby's own library (actionpack's `draw`,

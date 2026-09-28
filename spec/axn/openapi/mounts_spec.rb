@@ -65,6 +65,30 @@ RSpec.describe "mounts" do
       expect { Axn::OpenAPI.app(auth: :none, tools: [EchoTool]) }.not_to raise_error
     end
 
+    describe "claims made while drawing a route set (the Rails route lifecycle)" do
+      let(:route_set) { Object.new }
+
+      def draw(set, &) = Axn::OpenAPI::Mounts.drawing(set, &)
+
+      it "refuses a second build within one draw, even from the same line" do
+        expect { draw(route_set) { 2.times { Axn::OpenAPI.app(auth: :none, mount: :adhoc, tools: [EchoTool]) } } }
+          .to raise_error(Axn::OpenAPI::Error, /mount :adhoc is already built/i)
+      end
+
+      it "releases a route set's claims when it is cleared, whatever line the rebuild comes from" do
+        draw(route_set) { Axn::OpenAPI.app(auth: :none, mount: :adhoc, tools: [EchoTool]) }
+        Axn::OpenAPI::Mounts.release!(route_set)
+        expect { draw(route_set) { Axn::OpenAPI.app(auth: :none, mount: :adhoc, tools: [EchoTool]) } }.not_to raise_error
+      end
+
+      it "leaves claims made outside that route set in place" do
+        Axn::OpenAPI.app(auth: :none, mount: :adhoc, tools: [EchoTool])
+        Axn::OpenAPI::Mounts.release!(route_set)
+        expect { draw(route_set) { Axn::OpenAPI.app(auth: :none, mount: :adhoc, tools: [EchoTool]) } }
+          .to raise_error(Axn::OpenAPI::Error, /already built/)
+      end
+    end
+
     it "forgets every claim on reset_mounts!" do
       Axn::OpenAPI.app(auth: :none, mount: :adhoc, tools: [EchoTool])
       Axn::OpenAPI.reset_mounts!

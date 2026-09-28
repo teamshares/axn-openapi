@@ -57,8 +57,12 @@
     claim, which keeps Rails route reloading safe.
   - The "site" is the chain of application frames leading to the build, up to the first frame
     inside an installed gem or Ruby's own library. So a shared helper building one mount from two
-    call sites raises, instead of passing as a reload. A same-line repeat, such as a loop, still
-    replaces the claim.
+    call sites raises, instead of passing as a reload.
+  - Under Rails, a Railtie ties a mount built during a route draw to that `RouteSet`. Clearing the
+    set, which every route reload does before redrawing, releases its claims. That makes a reload
+    after an edit that shifts the mount's line safe, where a site-only match would raise. Such
+    claims are never replaced by site, so one mount built twice within one draw raises, even from
+    one line in a loop. Claims made outside a draw keep the site rule.
   - A failed build leaves no claim behind. Tests can clear the registry with
     `Axn::OpenAPI.reset_mounts!`.
   - `render_axn` refuses a mount-bound tool unless it is passed the matching `mount:`, so a
