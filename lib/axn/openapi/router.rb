@@ -38,8 +38,9 @@ module Axn
 
       # `authorize:` (optional) is called with the matched RouteEntry once the tool is known and
       # returns nil to proceed or a Dispatch (403) to stop — ahead of the verb check, so a forbidden
-      # caller learns nothing about what the path would accept. `ambient_context:` may be a Hash or a
-      # zero-arity callable, evaluated only when a tool is actually dispatched.
+      # caller learns nothing about what the path would accept. `raw_body:` and `ambient_context:` may
+      # each be a value or a zero-arity callable, evaluated only when a tool is actually dispatched —
+      # so a 403/404/405/spec request never reads (or buffers) the request body.
       def route(http_method:, path:, raw_body:, ambient_context: {}, script_name: "", authorize: nil)
         return spec_dispatch(http_method, script_name) if spec_path?(path)
 
@@ -52,6 +53,7 @@ module Axn
 
         # Shared parser (Dispatcher.parse_body) so the mount and controller skins can't diverge on
         # what counts as malformed: nil => malformed/non-object body => the shared 400 envelope.
+        raw_body = raw_body.call if raw_body.respond_to?(:call)
         params = Dispatcher.parse_body(raw_body)
         return Dispatcher.malformed_body_dispatch if params.nil?
 

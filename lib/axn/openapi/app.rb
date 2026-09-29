@@ -79,7 +79,7 @@ module Axn
         @router.route(
           http_method: request.http_method,
           path: request.path,
-          raw_body: request.raw_body,
+          raw_body: -> { request.raw_body },
           ambient_context: -> { ambient_context_for(env, principal) },
           script_name: request.script_name,
           authorize: authorizer_for(principal),

@@ -4,6 +4,11 @@
 
 > **Before cutting a release:** these changes need `Axn::Extensions::Auth`, which is on axn `main` but not in a released axn yet. Raise the gemspec `axn` floor to the release that ships it (alpha 7, PRO-3301) and drop the temporary `gem "axn", git: …` pins in `Gemfile` and `spec_rails/dummy_app/Gemfile`.
 
+- `[BUGFIX]` A mount no longer buffers the request body before authenticating it (flagged in the PRO-3566 security review).
+  - **Old:** `Request.from_rack` read `rack.input` in full up front, so an anonymous request bound for a 401 still had its whole body read into memory. **New:** `Request#raw_body` reads it on first call, memoized. The App reads it only when a tool is actually dispatched, so 401/403/404/405 and spec-document requests never touch it.
+  - A strategy that needs the body (a signature check, say) can still call `request.raw_body` during authentication; dispatch reuses that read.
+  - `Request#inspect` doesn't force the read. It shows the body's byte size only once the body has been read.
+  - `Request.new(raw_body: "…")` is unchanged. The internal `Router#route` now also accepts a zero-arity callable for `raw_body:`.
 - `[FEAT]` New `Axn::OpenAPI.config.path_segment_style` (`:snake` by default, or `:kebab`), for apps whose route convention is kebab-case.
   - `:kebab` serves a multi-word tool at `/list-integrations/v1` instead of `/list_integrations/v1`. Only the URL segment changes; `tool_name` and `operationId` (`list_integrations_v1`) stay snake_case.
   - An app captures the style when it's built, so its routing and its served document can't drift apart.
