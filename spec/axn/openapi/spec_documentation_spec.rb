@@ -67,10 +67,12 @@ RSpec.describe "documentation settings in the generated document" do
       expect(op(doc, "/echo_tool/v1").dig("requestBody", "content", "application/json")).not_to have_key("examples")
     end
 
-    it "hands each document its own copy" do
-      op(doc, "/tagged/v1").dig("requestBody", "content", "application/json", "examples", "default", "value")["company_uuid"] = "mutated"
+    it "hands each document its own copy, down to the leaf Strings" do
+      value = op(doc, "/tagged/v1").dig("requestBody", "content", "application/json", "examples", "default", "value")
+      value["company_uuid"].replace("mutated") # in place, on a String the config also holds
+      value["filters"]["active"] = false
       fresh = op(doc_for(TaggedTool), "/tagged/v1").dig("requestBody", "content", "application/json", "examples", "default", "value")
-      expect(fresh["company_uuid"]).to eq("c-1")
+      expect(fresh).to eq("company_uuid" => "c-1", "filters" => { "active" => true })
     end
 
     it "accepts only a Hash (or nil)" do

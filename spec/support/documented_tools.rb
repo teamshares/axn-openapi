@@ -9,7 +9,7 @@ class TaggedTool
   axn_name "tagged"
   configure(:openapi) do |c|
     c.operation_tags = %w[Credentials Integrations]
-    c.request_example = { company_uuid: "c-1", filters: { active: true } }
+    c.request_example = { company_uuid: +"c-1", filters: { active: true } } # mutable, as a built String would be
     c.response_example = { "integrations" => [{ "name" => "gusto" }] }
   end
   expects :company_uuid, type: String

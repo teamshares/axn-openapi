@@ -95,11 +95,12 @@ module Axn
       end
 
       # A media type object, with the tool's declared example (if any) as `examples.default`. The
-      # example is deep-stringified into a fresh copy per document (see error_ref).
+      # example is JSON round-tripped: a fresh copy per document down to its leaf Strings (see
+      # error_ref), shaped exactly as a client receives it (String keys, Symbol values as Strings).
       def media_type(schema, axn, example_setting)
         media = { "schema" => schema }
         example = Axn::OpenAPI.resolve_override_for(axn, example_setting)
-        media["examples"] = { "default" => { "value" => Auth.deep_stringify(example) } } if example
+        media["examples"] = { "default" => { "value" => JSON.parse(JSON.generate(example)) } } if example
         media
       end
 
