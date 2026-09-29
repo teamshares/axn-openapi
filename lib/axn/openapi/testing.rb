@@ -63,10 +63,14 @@ module Axn
         end
 
         schema = json_schemer.openapi(doc).ref(pointer("paths", path, method, "responses", status, "content", "application/json", "schema"))
-        body = body.is_a?(String) ? JSON.parse(body) : json_roundtrip(body)
+        begin
+          body = body.is_a?(String) ? JSON.parse(body) : json_roundtrip(body)
+        rescue JSON::JSONError, SystemStackError => e
+          # Unparseable JSON, or a Hash with no JSON rendering (NaN, a cycle, invalid bytes): a
+          # mismatch to report, not an exception to abort the example with.
+          return ["response body is not JSON: #{e.message}"]
+        end
         schema.validate(body).map { |error| error["error"] }
-      rescue JSON::ParserError => e
-        ["response body is not JSON: #{e.message}"]
       end
 
       # Raises ContractViolation listing the errors; returns the body when it matches.

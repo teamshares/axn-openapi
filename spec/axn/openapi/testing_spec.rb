@@ -40,6 +40,17 @@ RSpec.describe Axn::OpenAPI::Testing do
       expect(described_class.response_errors(doc, operation_id: "refuse_tool_v1", status: 422, body: { "oops" => true })).not_to be_empty
     end
 
+    it "reports a body that isn't JSON, rather than raising" do
+      cycle = {}
+      cycle["self"] = cycle
+      ["{not json", { "echoed" => Float::NAN }, cycle].each do |body|
+        expect(described_class.response_errors(doc, operation_id: "echo_tool_v1", status: 200, body:))
+          .to contain_exactly(a_string_starting_with("response body is not JSON"))
+      end
+      expect { described_class.validate_response!(doc, operation_id: "echo_tool_v1", status: 200, body: { "echoed" => Float::NAN }) }
+        .to raise_error(Axn::OpenAPI::Testing::ContractViolation)
+    end
+
     it "reports an unknown operation or an undocumented status" do
       expect(described_class.response_errors(doc, operation_id: "nope_v1", status: 200, body: {}))
         .to eq(['no operation "nope_v1" in the document'])
