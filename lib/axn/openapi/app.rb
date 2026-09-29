@@ -42,13 +42,16 @@ module Axn
         # dup + freeze so that even a mutable source String mutated after construction can't drift the
         # captured value (`.to_s` alone returns the same object for a String).
         resolved_prefix = (path_prefix || Axn::OpenAPI.config.path_prefix).to_s.dup.freeze
+        # Captured once for the same reason as the prefix: routing and the served document must agree.
+        segment_style = Axn::OpenAPI.config.path_segment_style
         # The provider is handed the request's mount base (SCRIPT_NAME) at serve time so the served
         # doc can publish it as its `servers` base — see Request#script_name / SpecGenerator.
         provider = spec_provider || lambda { |base|
           SpecGenerator.new(tools: @tools, path_prefix: resolved_prefix, servers_base: base, info:,
-                            security_schemes:, authorize_all: !@authorize.nil?).generate
+                            security_schemes:, authorize_all: !@authorize.nil?, path_segment_style: segment_style).generate
         }
-        @router = Router.new(tools: @tools, path_prefix: resolved_prefix, spec_path:, spec_provider: provider)
+        @router = Router.new(tools: @tools, path_prefix: resolved_prefix, spec_path:, spec_provider: provider,
+                             path_segment_style: segment_style)
       end
 
       def call(env)

@@ -8,9 +8,9 @@ module Axn
     class Router
       # A path shaped like a tool call, so an unmatched request can be told apart from noise and its
       # tool_name recovered for the 404 latest-version pointer.
-      TOOL_PATH = %r{\A/(?<name>[a-z0-9_]+)/v\d+\z}
+      TOOL_PATH = %r{\A/(?<name>[a-z0-9_-]+)/v\d+\z}
 
-      def initialize(tools:, path_prefix: nil, spec_path: nil, spec_provider: nil)
+      def initialize(tools:, path_prefix: nil, spec_path: nil, spec_provider: nil, path_segment_style: nil)
         @path_prefix = (path_prefix || Axn::OpenAPI.config.path_prefix).to_s
         @spec_full = "#{@path_prefix}#{spec_path || Axn::OpenAPI.config.spec_path}"
         # A one-arg provider is handed the request's mount base (SCRIPT_NAME) so the served doc can
@@ -18,10 +18,11 @@ module Axn
         # still supported — see spec_dispatch's arity check.
         @spec_provider = spec_provider || ->(_script_name) { {} }
 
-        entries = RouteTable.build(tools:, path_prefix: @path_prefix)
+        entries = RouteTable.build(tools:, path_prefix: @path_prefix,
+                                   path_segment_style: path_segment_style || Axn::OpenAPI.config.path_segment_style)
         @by_path = entries.to_h { |e| [e.path, e] }
-        # tool_name => newest entry, for the 404 pointer. Entries are asc by version, so `last` wins.
-        @latest_by_name = entries.to_h { |e| [e.axn.tool_name(:openapi), e] }
+        # path segment => newest entry, for the 404 pointer. Entries are asc by version, so `last` wins.
+        @latest_by_segment = entries.to_h { |e| [e.segment, e] }
 
         # The spec endpoint is matched before the tool map, so a spec_path equal to a tool route would
         # silently shadow that tool (GET serves the doc, POST 405s) while the doc still advertises the
@@ -85,7 +86,7 @@ module Axn
         # and echoing it is the kind of untrusted content that shouldn't ride into a response body.
         return error(404, "Unknown tool") unless match
 
-        latest = @latest_by_name[match[:name]]
+        latest = @latest_by_segment[match[:name]]
         return error(404, "Unknown tool: #{match[:name]}") if latest.nil?
 
         # A forbidden caller (403) gets exactly what a nonexistent tool gets, so the 404 can't confirm

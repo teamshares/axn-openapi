@@ -16,6 +16,11 @@ module Axn
     # Route surface.
     setting :path_prefix, default: ""
     setting :spec_path, default: "/openapi.json"
+    # How a tool_name is rendered as its URL path segment. `:snake` serves the tool_name as-is
+    # (`/list_integrations/v1`); `:kebab` hyphenates it (`/list-integrations/v1`) for apps whose
+    # route convention is kebab-case. Only the path changes — tool_name and operationId stay
+    # snake_case, so generated clients and other adapters see the same names either way.
+    setting :path_segment_style, default: :snake, one_of: %i[snake kebab]
 
     # Dispatch behavior.
     # `overridable` so a single strict endpoint can reject unknown body keys without imposing that on

@@ -11,17 +11,19 @@ module Axn
       # listing them as alternatives, and a 401 on every operation. A 403 is documented where the
       # tool declares `allowed_callers`, or on every operation when `authorize_all:` (a mount-level
       # `authorize:` callable may refuse any of them). `info:` is merged over the configured info_*.
-      def initialize(tools:, path_prefix: nil, info: nil, servers_base: nil, security_schemes: {}, authorize_all: false)
+      def initialize(tools:, path_prefix: nil, info: nil, servers_base: nil, security_schemes: {}, authorize_all: false,
+                     path_segment_style: nil)
         @tools = tools
         @path_prefix = (path_prefix || Axn::OpenAPI.config.path_prefix).to_s
         @info = default_info.merge(Auth.deep_stringify(info || {}))
         @servers_base = servers_base.to_s
         @security_schemes = security_schemes || {}
         @authorize_all = authorize_all
+        @path_segment_style = path_segment_style || Axn::OpenAPI.config.path_segment_style
       end
 
       def generate
-        entries = RouteTable.build(tools: @tools, path_prefix: @path_prefix)
+        entries = RouteTable.build(tools: @tools, path_prefix: @path_prefix, path_segment_style: @path_segment_style)
         doc = { "openapi" => "3.1.0", "info" => @info }
         # The doc's paths are mount-RELATIVE (they carry `path_prefix` but not the Rack mount point).
         # When the app is mounted below the origin root (e.g. `/api`), Rack strips that mount point
