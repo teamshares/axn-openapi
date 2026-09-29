@@ -16,6 +16,8 @@ module Axn
     # Route surface.
     setting :path_prefix, default: ""
     setting :spec_path, default: "/openapi.json"
+    # The same document as YAML (`application/yaml`), gated exactly like `spec_path`; nil turns it off.
+    setting :spec_yaml_path, default: "/openapi.yaml"
     # How a tool_name is rendered as its URL path segment. `:snake` serves the tool_name as-is
     # (`/list_integrations/v1`); `:kebab` hyphenates it (`/list-integrations/v1`) for apps whose
     # route convention is kebab-case. Only the path changes — tool_name and operationId stay
@@ -145,6 +147,11 @@ module Axn
       security_schemes = auth.nil? ? {} : Auth.security_schemes(Auth.strategies_for(auth))
       SpecGenerator.new(tools: tools || self.tools(mount:), path_prefix:, info:, security_schemes:,
                         authorize_all: !authorize.nil?).generate
+    end
+
+    # `.spec` rendered as YAML — what the mount serves at `spec_yaml_path`.
+    def self.spec_yaml(**)
+      SpecGenerator.to_yaml(spec(**))
     end
 
     # Register :openapi with core's process-global registry, passing this module as the config

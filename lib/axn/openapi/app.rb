@@ -60,7 +60,7 @@ module Axn
         # Render boundary: guarantee the body is JSON-encodable (covers router 404/spec-doc bodies too,
         # not just Dispatcher.call's) so nothing raises out of Response.json / escapes the Rack app.
         dispatch = Dispatcher.ensure_encodable(dispatch)
-        Response.json(dispatch.body, status: dispatch.status, headers: dispatch.headers).to_rack
+        Response.for(dispatch).to_rack
       end
 
       private

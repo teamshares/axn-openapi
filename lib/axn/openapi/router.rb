@@ -13,6 +13,8 @@ module Axn
       def initialize(tools:, path_prefix: nil, spec_path: nil, spec_provider: nil, path_segment_style: nil)
         @path_prefix = (path_prefix || Axn::OpenAPI.config.path_prefix).to_s
         @spec_full = "#{@path_prefix}#{spec_path || Axn::OpenAPI.config.spec_path}"
+        yaml_path = Axn::OpenAPI.config.spec_yaml_path
+        @spec_yaml_full = yaml_path && "#{@path_prefix}#{yaml_path}"
         # A one-arg provider is handed the request's mount base (SCRIPT_NAME) so the served doc can
         # publish it as its `servers` base. A zero-arg provider (the documented `-> { ... }` form) is
         # still supported — see spec_dispatch's arity check.
@@ -24,17 +26,17 @@ module Axn
         # path segment => newest entry, for the 404 pointer. Entries are asc by version, so `last` wins.
         @latest_by_segment = entries.to_h { |e| [e.segment, e] }
 
-        # The spec endpoint is matched before the tool map, so a spec_path equal to a tool route would
+        # The spec endpoints are matched before the tool map, so a spec path equal to a tool route would
         # silently shadow that tool (GET serves the doc, POST 405s) while the doc still advertises the
         # tool's POST there. Fail loud at construction rather than ship that contradiction.
-        return unless @by_path.key?(@spec_full)
+        check_spec_path!(:spec_path, @spec_full)
+        check_spec_path!(:spec_yaml_path, @spec_yaml_full) if @spec_yaml_full
+        return unless @spec_yaml_full == @spec_full
 
-        raise Axn::OpenAPI::Error,
-              "spec_path #{@spec_full.inspect} collides with the tool route for " \
-              "#{@by_path[@spec_full].axn.tool_name(:openapi).inspect}; configure a non-colliding spec_path"
+        raise Axn::OpenAPI::Error, "spec_yaml_path #{@spec_yaml_full.inspect} is also the spec_path; configure distinct paths"
       end
 
-      def spec_path?(path) = path == @spec_full
+      def spec_path?(path) = path == @spec_full || (!@spec_yaml_full.nil? && path == @spec_yaml_full)
 
       # `authorize:` (optional) is called with the matched RouteEntry once the tool is known and
       # returns nil to proceed or a Dispatch (403) to stop — ahead of the verb check, so a forbidden
@@ -42,7 +44,7 @@ module Axn
       # each be a value or a zero-arity callable, evaluated only when a tool is actually dispatched —
       # so a 403/404/405/spec request never reads (or buffers) the request body.
       def route(http_method:, path:, raw_body:, ambient_context: {}, script_name: "", authorize: nil)
-        return spec_dispatch(http_method, script_name) if spec_path?(path)
+        return spec_dispatch(http_method, script_name, path == @spec_full ? :json : :yaml) if spec_path?(path)
 
         entry = @by_path[path]
         return not_found(path, script_name, authorize) unless entry
@@ -63,7 +65,15 @@ module Axn
 
       private
 
-      def spec_dispatch(http_method, script_name)
+      def check_spec_path!(setting, full)
+        return unless @by_path.key?(full)
+
+        raise Axn::OpenAPI::Error,
+              "#{setting} #{full.inspect} collides with the tool route for " \
+              "#{@by_path[full].axn.tool_name(:openapi).inspect}; configure a non-colliding #{setting}"
+      end
+
+      def spec_dispatch(http_method, script_name, format)
         return error(405, "Method not allowed", allow: "GET") unless http_method == "GET"
 
         # Honor both provider shapes: a zero-arity `-> { ... }` (the documented form) is called with no
@@ -72,7 +82,7 @@ module Axn
         # plain callable object (`def call`) doesn't respond to `#arity`, so read it off its #call.
         callable = @spec_provider.respond_to?(:arity) ? @spec_provider : @spec_provider.method(:call)
         doc = callable.arity.zero? ? @spec_provider.call : @spec_provider.call(script_name)
-        Dispatch.new(200, doc)
+        Dispatch.new(200, doc, {}, format)
       end
 
       # A known tool_name at a non-existent version points at the latest available version;

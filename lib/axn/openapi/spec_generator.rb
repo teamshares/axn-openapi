@@ -1,11 +1,18 @@
 # frozen_string_literal: true
 
+require "json"
+require "yaml"
+
 module Axn
   module OpenAPI
     # Assembles the OpenAPI 3.1 document from axn-core reflection. Near-mechanical: one POST path
     # per tool, requestBody = input_schema, 200 = output_schema, shared Error component for
     # failures, and the semantic hints as an x-axn-semantic-hints vendor extension.
     class SpecGenerator
+      # YAML of the document exactly as a JSON client receives it: the JSON round-trip turns the Symbol
+      # keys core's reflection emits into Strings (YAML would otherwise write `:required`).
+      def self.to_yaml(doc) = YAML.dump(JSON.parse(JSON.generate(doc)))
+
       # `security_schemes:` (name => OpenAPI security scheme, from Auth.security_schemes) documents how
       # the mount authenticates: published as `components.securitySchemes` plus a top-level `security`
       # listing them as alternatives, and a 401 on every operation. A 403 is documented where the

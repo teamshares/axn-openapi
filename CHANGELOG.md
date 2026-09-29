@@ -4,6 +4,11 @@
 
 > **Before cutting a release:** these changes need `Axn::Extensions::Auth`, which is on axn `main` but not in a released axn yet. Raise the gemspec `axn` floor to the release that ships it (alpha 7, PRO-3301) and drop the temporary `gem "axn", git: …` pins in `Gemfile` and `spec_rails/dummy_app/Gemfile`.
 
+- `[FEAT]` The document is also available as YAML.
+  - `Axn::OpenAPI.spec_yaml(...)` takes `.spec`'s arguments and returns a YAML String. Keys are Strings, exactly as a JSON client receives them, via a JSON round-trip, so no Ruby `:symbol` keys leak.
+  - A mount serves it at the new `spec_yaml_path` setting (default `"/openapi.yaml"`, `nil` turns it off) as `application/yaml`. It's authenticated like `spec_path`, including the `public_spec:` exemption, and is GET-only (a JSON 405 + `Allow: GET` otherwise).
+  - Build time fails if it collides with a tool route or with `spec_path`.
+  - `[INTERNAL]` `Dispatch` gains a `format` member (`:json` by default; existing positional construction is unchanged), rendered by the new `Response.for`.
 - `[FEAT]` Four per-tool documentation settings, set via `tool openapi: { … }` or `configure(:openapi)`. They shape only the published document.
   - `operation_tags` (non-empty Array of Strings) → the operation's `tags`, plus a top-level `tags` list naming each once. Not called `tags`, to avoid confusion with axn's `tag` telemetry DSL.
   - `deprecated`: **automatic by default.** A tool version is published `deprecated: true` when the same document also carries a newer version of that tool; `true`/`false` forces it. Judged per document, so a mount serving only v1 doesn't mark it. Documents that already serve several versions of a tool now mark the older ones deprecated.

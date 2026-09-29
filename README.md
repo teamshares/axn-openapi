@@ -104,7 +104,7 @@ behavior is identical either way — pick based on whether you want this gem to 
 ### 1. Mount the app (`Axn::OpenAPI.app`)
 
 Owns routing: one `POST /<tool_name>/v<n>` route per registered tool *version*, plus
-`GET /openapi.json` (or your configured `spec_path`). Use this when you don't need per-tool
+`GET /openapi.json` (or your configured `spec_path`) and its YAML twin `GET /openapi.yaml`. Use this when you don't need per-tool
 routing/filters.
 
 ```ruby
@@ -406,6 +406,7 @@ Axn::OpenAPI.config.path_prefix = "/axns"
 | --- | --- | --- |
 | `path_prefix` | `""` | Prepended to every tool route when computing the spec's paths and (for the mount skin) when matching an inbound request. Purely cosmetic when mounting — the mount point (`mount ... => "/api"`) already does the real prefixing at the Rack level. |
 | `spec_path` | `"/openapi.json"` | Where the mount skin serves the generated OpenAPI document (`GET`). |
+| `spec_yaml_path` | `"/openapi.yaml"` | Where the mount skin serves the same document as YAML (`application/yaml`). Authenticated exactly like `spec_path`, including the `public_spec:` exemption. `nil` turns it off. |
 | `path_segment_style` | `:snake` | How a tool's name appears in its path: `:snake` serves `/list_integrations/v1`, `:kebab` serves `/list-integrations/v1`. It changes only the URL: `tool_name` and `operationId` stay snake_case (`list_integrations_v1`). An app records the style when it's built, so routes and the served document always agree. |
 | `reject_undeclared_inputs` | `false` (lenient) | `false`: unknown top-level body keys are silently ignored (matches JSON Schema's `additionalProperties`-permitted posture; forward-compatible across client/server version skew). `true`: an unknown key fails as a 400, same bucket as any other input-contract violation, and the published request schema tightens to `additionalProperties: false` to match. A typo on a *required* field always fails regardless of this setting. Settable per tool — see [Per-tool overrides](#per-tool-overrides). |
 | `reject_opaque_exposed_values` | `true` (strict) | `true`: an exposed value with no JSON rendering *its author declared* is a 500 rather than a body containing `"#<User:0x...>"` (or, in Rails, an instance-variable dump). `false`: that rendering ships, matching axn-mcp's default. See [Rejecting opaque exposed values](#rejecting-opaque-exposed-values-reject_opaque_exposed_values). |
@@ -445,7 +446,7 @@ so generated clients and OpenAPI validators match what the endpoint actually enf
 The documentation settings (`operation_tags`, `deprecated`, `request_example`, `response_example`)
 are per tool too; see [Documenting operations](#documenting-operations).
 
-The remaining settings are gem-wide only — `path_prefix` / `spec_path` / `tool_roots` describe the
+The remaining settings are gem-wide only — `path_prefix` / `spec_path` / `spec_yaml_path` / `tool_roots` describe the
 mount and the registry rather than a tool, and the `info_*` values describe the one document.
 
 ### Documenting operations
@@ -584,6 +585,8 @@ A `400` additionally carries `field_errors`:
 ```ruby
 Axn::OpenAPI.spec(mount: nil, tools: nil, auth: nil, authorize: nil, info: nil, path_prefix: nil)
 # => the OpenAPI 3.1 document as a Hash (tools: defaults to Axn::OpenAPI.tools(mount:))
+
+Axn::OpenAPI.spec_yaml(...) # same arguments => the same document as a YAML String
 ```
 
 Pass `auth:` (and `authorize:`) to document security exactly as `.app` would:
@@ -601,6 +604,21 @@ One `POST` path per tool *version* (`/{tool}/v{n}`; `operationId` is `{tool}_v{n
 component. `tags`, `deprecated`, and request/response `examples` come from the
 [documentation settings](#documenting-operations). A non-empty `semantic_hints` declaration is emitted as the `x-axn-semantic-hints` vendor
 extension (an array).
+
+## Viewing the document
+
+The gem serves the document, not a docs UI. On an authenticated mount a browser can't send the
+bearer key, so a served page would load empty. Fetch the document with the key and open it in
+a local viewer:
+
+```sh
+curl -H "Authorization: Bearer $KEY" https://os.example.com/api/credentials/openapi.json -o openapi.json
+npx @redocly/cli preview-docs openapi.json   # Redoc in a local browser tab
+npx @redocly/cli lint openapi.json           # style/consistency checks
+```
+
+The OpenAPI and Swagger Viewer extensions for VS Code render `openapi.json` / `openapi.yaml`
+directly.
 
 ## Requirements
 
