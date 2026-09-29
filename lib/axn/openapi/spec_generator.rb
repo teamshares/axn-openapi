@@ -43,7 +43,8 @@ module Axn
         @latest_versions = entries.to_h { |entry| [entry.axn.tool_name(:openapi), entry.axn.tool_version] }
         doc["paths"] = entries.to_h { |entry| [entry.path, path_item(entry)] }
         tags = entries.flat_map { |entry| Array(Axn::OpenAPI.resolve_override_for(entry.axn, :operation_tags)) }.uniq
-        doc["tags"] = tags.map { |name| { "name" => name } } unless tags.empty?
+        # `dup` each name: tags come from tool config, so a document edited in place must not reach back.
+        doc["tags"] = tags.map { |name| { "name" => name.dup } } unless tags.empty?
         doc["components"] = { "schemas" => { "Error" => error_schema } }
         unless @security_schemes.empty?
           # Fresh copies per document (see error_ref) — schemes may be shared frozen objects.
@@ -80,7 +81,7 @@ module Axn
         op["responses"]["403"] = error_response("Forbidden") if forbiddable?(axn)
         op["summary"] = axn.description if axn.description
         tags = Axn::OpenAPI.resolve_override_for(axn, :operation_tags)
-        op["tags"] = tags.dup if tags
+        op["tags"] = tags.map(&:dup) if tags
         op["deprecated"] = true if deprecated?(axn)
         hints = axn._semantic_hints.map(&:to_s)
         op["x-axn-semantic-hints"] = hints unless hints.empty?

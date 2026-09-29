@@ -20,6 +20,14 @@ RSpec.describe "documentation settings in the generated document" do
       expect(doc["tags"]).to eq([{ "name" => "Credentials" }, { "name" => "Integrations" }])
     end
 
+    it "hands each document its own tag Strings" do
+      op(doc, "/tagged/v1")["tags"][0].replace("Mutated")
+      doc["tags"][1]["name"].replace("Mutated")
+      fresh = doc_for(TaggedTool)
+      expect(op(fresh, "/tagged/v1")["tags"]).to eq(%w[Credentials Integrations])
+      expect(fresh["tags"]).to eq([{ "name" => "Credentials" }, { "name" => "Integrations" }])
+    end
+
     it "omits the top-level tags list when nothing is tagged" do
       expect(doc_for(EchoTool)).not_to have_key("tags")
     end
