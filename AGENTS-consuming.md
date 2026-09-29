@@ -149,6 +149,7 @@ never the reverse.
 | --- | --- | --- |
 | `path_prefix` | `""` | Prefix used when computing spec paths / matching requests (mount skin). |
 | `spec_path` | `"/openapi.json"` | Where the mount skin serves the spec. |
+| `path_segment_style` | `:snake` | `:kebab` serves `/list-integrations/v1` instead of `/list_integrations/v1`. It changes only the path; `tool_name` and `operationId` stay snake_case. |
 | `reject_undeclared_inputs` | `false` | `true` → an unknown body key is a 400 and the published request schema sets `additionalProperties: false`; `false` → silently ignored. |
 | `reject_opaque_exposed_values` | `true` | `true` → an exposed value that declares no JSON projection of its own is a 500 instead of rendering an object address (or, in Rails, ActiveSupport's generic `as_json` ivar dump). Does not govern values with no JSON rendering *at all* — a cycle, keys that collapse to one property, a non-finite `Float`, non-UTF-8 bytes — which axn core rejects unconditionally. |
 | `mount` | `nil` | Per tool: the mount that serves it (Symbol); `nil` = the default mount. |

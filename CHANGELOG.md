@@ -4,6 +4,10 @@
 
 > **Before cutting a release:** these changes need `Axn::Extensions::Auth`, which is on axn `main` but not in a released axn yet. Raise the gemspec `axn` floor to the release that ships it (alpha 7, PRO-3301) and drop the temporary `gem "axn", git: …` pins in `Gemfile` and `spec_rails/dummy_app/Gemfile`.
 
+- `[FEAT]` New `Axn::OpenAPI.config.path_segment_style` (`:snake` by default, or `:kebab`), for apps whose route convention is kebab-case.
+  - `:kebab` serves a multi-word tool at `/list-integrations/v1` instead of `/list_integrations/v1`. Only the URL segment changes; `tool_name` and `operationId` (`list_integrations_v1`) stay snake_case.
+  - An app captures the style when it's built, so its routing and its served document can't drift apart.
+  - A 404 for an unknown version names the tool by its rendered segment and points at that segment's latest path.
 - `[BREAKING]` `Axn::OpenAPI.app` / `App.new` now **require `auth:`**. The gem is fail-closed.
   - **Old:** omitting it served unauthenticated. **New:** omitting it raises `Axn::OpenAPI::Error` at build time.
   - Pass a strategy (`Axn::Extensions::Auth::Bearer.new(keys: {...})` from axn core), an Array of
