@@ -83,6 +83,12 @@ module Axn
         callable = @spec_provider.respond_to?(:arity) ? @spec_provider : @spec_provider.method(:call)
         doc = callable.arity.zero? ? @spec_provider.call : @spec_provider.call(script_name)
         Dispatch.new(200, doc, {}, format)
+      rescue StandardError, SystemStackError => e
+        # Building the document failed (an example mutated into something with no JSON rendering after
+        # it was declared, say). Answer the generic 500 rather than raise out of the Rack app — the same
+        # boundary Dispatcher.ensure_encodable holds for a document that builds but won't encode.
+        Axn.config.logger.error { "[axn-openapi] failed to build the OpenAPI document: #{e.class}: #{e.message}" }
+        Dispatch.new(500, Dispatcher::GENERIC_500)
       end
 
       # A known tool_name at a non-existent version points at the latest available version;

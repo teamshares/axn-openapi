@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "rack/mock"
+
 RSpec.describe "documentation settings in the generated document" do
   def doc_for(*tools) = Axn::OpenAPI::SpecGenerator.new(tools:).generate
   def op(doc, path) = doc.dig("paths", path, "post")
@@ -91,6 +93,25 @@ RSpec.describe "documentation settings in the generated document" do
       cycle = {}
       cycle[:self] = cycle
       expect { Axn::OpenAPI.config.request_example = cycle }.to raise_error(ArgumentError, /request_example must be JSON-encodable/)
+    end
+
+    it "answers a generic 500 when an example is mutated into non-JSON after declaration" do
+      example = { company_uuid: +"c-1" }
+      tool = Class.new do
+        include Axn
+
+        axn_name "late_mutation"
+        expects :company_uuid, type: String
+        def call; end
+      end
+      tool.configure(:openapi) { |c| c.request_example = example }
+      example[:company_uuid] << "\xFF".b # invalid UTF-8, introduced after the validator ran
+      mock = Rack::MockRequest.new(Axn::OpenAPI.app(auth: :none, tools: [tool]))
+      %w[/openapi.json /openapi.yaml].each do |path|
+        res = mock.get(path)
+        expect(res.status).to eq(500)
+        expect(JSON.parse(res.body)).to eq("error" => { "message" => "Internal Server Error" })
+      end
     end
 
     it "accepts only a Hash (or nil)" do

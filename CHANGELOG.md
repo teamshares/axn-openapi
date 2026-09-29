@@ -13,6 +13,7 @@
   - `Axn::OpenAPI.spec_yaml(...)` takes `.spec`'s arguments and returns a YAML String. Keys are Strings, exactly as a JSON client receives them, via a JSON round-trip, so no Ruby `:symbol` keys leak.
   - A mount serves it at the new `spec_yaml_path` setting (default `"/openapi.yaml"`, `nil` turns it off) as `application/yaml`. It's authenticated like `spec_path`, including the `public_spec:` exemption, and is GET-only (a JSON 405 + `Allow: GET` otherwise).
   - Build time fails if it collides with a tool route or with `spec_path`.
+  - If building the document raises (JSON or YAML), the mount now answers the generic 500 and logs the error, instead of raising out of the Rack app.
   - `[INTERNAL]` `Dispatch` gains a `format` member (`:json` by default; existing positional construction is unchanged), rendered by the new `Response.for`.
 - `[FEAT]` Four per-tool documentation settings, set via `tool openapi: { … }` or `configure(:openapi)`. They shape only the published document.
   - `operation_tags` (non-empty Array of Strings) → the operation's `tags`, plus a top-level `tags` list naming each once. Not called `tags`, to avoid confusion with axn's `tag` telemetry DSL.
