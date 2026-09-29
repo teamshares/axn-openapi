@@ -104,7 +104,7 @@ behavior is identical either way — pick based on whether you want this gem to 
 ### 1. Mount the app (`Axn::OpenAPI.app`)
 
 Owns routing: one `POST /<tool_name>/v<n>` route per registered tool *version*, plus
-`GET /openapi.json` (or your configured `spec_path`). Use this when you don't need per-tool
+`GET /openapi.json` (or your configured `spec_path`) and its YAML twin `GET /openapi.yaml`. Use this when you don't need per-tool
 routing/filters.
 
 ```ruby
@@ -406,11 +406,15 @@ Axn::OpenAPI.config.path_prefix = "/axns"
 | --- | --- | --- |
 | `path_prefix` | `""` | Prepended to every tool route when computing the spec's paths and (for the mount skin) when matching an inbound request. Purely cosmetic when mounting — the mount point (`mount ... => "/api"`) already does the real prefixing at the Rack level. |
 | `spec_path` | `"/openapi.json"` | Where the mount skin serves the generated OpenAPI document (`GET`). |
+| `spec_yaml_path` | `"/openapi.yaml"` | Where the mount skin serves the same document as YAML (`application/yaml`). Authenticated exactly like `spec_path`, including the `public_spec:` exemption. `nil` turns it off. |
 | `path_segment_style` | `:snake` | How a tool's name appears in its path: `:snake` serves `/list_integrations/v1`, `:kebab` serves `/list-integrations/v1`. It changes only the URL: `tool_name` and `operationId` stay snake_case (`list_integrations_v1`). An app records the style when it's built, so routes and the served document always agree. |
 | `reject_undeclared_inputs` | `false` (lenient) | `false`: unknown top-level body keys are silently ignored (matches JSON Schema's `additionalProperties`-permitted posture; forward-compatible across client/server version skew). `true`: an unknown key fails as a 400, same bucket as any other input-contract violation, and the published request schema tightens to `additionalProperties: false` to match. A typo on a *required* field always fails regardless of this setting. Settable per tool — see [Per-tool overrides](#per-tool-overrides). |
 | `reject_opaque_exposed_values` | `true` (strict) | `true`: an exposed value with no JSON rendering *its author declared* is a 500 rather than a body containing `"#<User:0x...>"` (or, in Rails, an instance-variable dump). `false`: that rendering ships, matching axn-mcp's default. See [Rejecting opaque exposed values](#rejecting-opaque-exposed-values-reject_opaque_exposed_values). |
 | `mount` | `nil` | Per tool (`tool openapi: { mount: :name }`): which mount serves it. See [Mounts](#mounts-keeping-tool-sets-apart). |
 | `allowed_callers` | `nil` | Per tool: principal ids allowed to call it (non-empty Array); `nil` admits any authenticated caller. See [403](#authorization-403). |
+| `operation_tags` | `nil` | Per tool: the operation's OpenAPI `tags` (a non-empty Array of Strings). Docs viewers group operations by tag, and client generators name modules/classes after them (`openapi-python-client` writes `api/credentials/…`; untagged operations land in `api/default/`). Named `operation_tags`, not `tags`, so it isn't mistaken for axn's `tag` telemetry DSL. See [Documenting operations](#documenting-operations). |
+| `deprecated` | `nil` (auto) | Per tool: `nil` marks a version `deprecated: true` exactly when the same document also serves a newer version of that tool; `true`/`false` forces it. |
+| `request_example` / `response_example` | `nil` | Per tool: one example request body / `200` body (a Hash), published as the media type's `examples.default`. |
 | `info_title` | `"Axn API"` | OpenAPI `info.title`. |
 | `info_version` | `"1.0.0"` | OpenAPI `info.version`. |
 | `info_description` | `nil` | OpenAPI `info.description`; omitted from the document when nil. |
@@ -439,8 +443,39 @@ An override is honored by the generated document as well as at runtime: a tool w
 `reject_undeclared_inputs = true` publishes `additionalProperties: false` on *its* request schema only,
 so generated clients and OpenAPI validators match what the endpoint actually enforces.
 
-The remaining settings are gem-wide only — `path_prefix` / `spec_path` / `tool_roots` describe the
+The documentation settings (`operation_tags`, `deprecated`, `request_example`, `response_example`)
+are per tool too; see [Documenting operations](#documenting-operations).
+
+The remaining settings are gem-wide only — `path_prefix` / `spec_path` / `spec_yaml_path` / `tool_roots` describe the
 mount and the registry rather than a tool, and the `info_*` values describe the one document.
+
+### Documenting operations
+
+Four per-tool settings shape only the published document; none of them changes how a request is served:
+
+```ruby
+class ListIntegrations
+  include Axn
+
+  tool openapi: {
+    operation_tags: ["Integrations"],                        # => "tags": ["Integrations"]
+    request_example: { company_uuid: "c-1" },                # => requestBody examples.default
+    response_example: { integrations: [{ name: "gusto" }] }, # => 200 examples.default
+  }
+  # ...
+end
+```
+
+- **`operation_tags`**: the operation's `tags`. The document also gets a top-level `tags` list naming
+  each tag once. Decide on tags before a consumer generates a client: they become its module and
+  class names, so adding them later renames the consumer's imports.
+- **`deprecated`**: automatic by default. When `/list_integrations/v1` and `/list_integrations/v2` are
+  in the same document, v1 is published `deprecated: true`. Set `deprecated: false` to keep an older
+  version undeprecated, or `true` to deprecate the latest. It's judged per document, so a mount that
+  serves only v1 doesn't mark it deprecated.
+- **`request_example` / `response_example`**: one example body each, keys stringified. They aren't
+  checked at runtime; the [contract-test helper](#contract-testing-a-mount) validates them against
+  the operation's schemas.
 
 ## Rejecting opaque exposed values (`reject_opaque_exposed_values`)
 
@@ -550,6 +585,8 @@ A `400` additionally carries `field_errors`:
 ```ruby
 Axn::OpenAPI.spec(mount: nil, tools: nil, auth: nil, authorize: nil, info: nil, path_prefix: nil)
 # => the OpenAPI 3.1 document as a Hash (tools: defaults to Axn::OpenAPI.tools(mount:))
+
+Axn::OpenAPI.spec_yaml(...) # same arguments => the same document as a YAML String
 ```
 
 Pass `auth:` (and `authorize:`) to document security exactly as `.app` would:
@@ -564,8 +601,65 @@ Pass `auth:` (and `authorize:`) to document security exactly as `.app` would:
 One `POST` path per tool *version* (`/{tool}/v{n}`; `operationId` is `{tool}_v{n}`, `summary` from
 `description`), `requestBody`/`200` schemas taken verbatim from that version's own
 `input_schema`/`output_schema`, and `400`/`422`/`500` responses referencing the shared `Error`
-component. A non-empty `semantic_hints` declaration is emitted as the `x-axn-semantic-hints` vendor
+component. `tags`, `deprecated`, and request/response `examples` come from the
+[documentation settings](#documenting-operations). A non-empty `semantic_hints` declaration is emitted as the `x-axn-semantic-hints` vendor
 extension (an array).
+
+## Viewing the document
+
+The gem serves the document, not a docs UI. On an authenticated mount a browser can't send the
+bearer key, so a served page would load empty. Fetch the document with the key and open it in
+a local viewer:
+
+```sh
+curl -H "Authorization: Bearer $KEY" https://os.example.com/api/credentials/openapi.json -o openapi.json
+npx @redocly/cli preview-docs openapi.json   # Redoc in a local browser tab
+npx @redocly/cli lint openapi.json           # style/consistency checks
+```
+
+The OpenAPI and Swagger Viewer extensions for VS Code render `openapi.json` / `openapi.yaml`
+directly.
+
+## Contract-testing a mount
+
+`axn/openapi/testing` checks, in your own suite, that a mount's document is sound and that its
+responses match it. It uses [json_schemer](https://github.com/davishmcclurg/json_schemer), which
+isn't a runtime dependency: add it to your test group.
+
+```ruby
+# Gemfile
+group :test do
+  gem "json_schemer", "~> 2.4"
+end
+
+# spec/requests/credentials_api_spec.rb
+require "axn/openapi/testing/rspec"
+
+it "publishes a valid document and honors it" do
+  get "/internal/credentials/openapi.json", headers: { "Authorization" => "Bearer #{key}" }
+  doc = response.parsed_body
+  expect(doc).to be_a_valid_openapi_document   # OpenAPI 3.1 metaschema + every declared example
+
+  post "/internal/credentials/integration_credentials/v1", params: { company_uuid: "c-1" }.to_json,
+       headers: { "Authorization" => "Bearer #{key}", "Content-Type" => "application/json" }
+  expect(response).to match_openapi_response(doc, operation_id: "integration_credentials_v1")
+end
+```
+
+- `be_a_valid_openapi_document` validates against the OpenAPI 3.1 metaschema. For a document that
+  passes, it also checks each `request_example` / `response_example` against its operation's schema.
+- `match_openapi_response(doc, operation_id:, status: nil)` validates a body against the response
+  schema that operation documents for the status. It resolves the shared `Error` `$ref`. It accepts
+  a response object (`#status` and `#body`, e.g. a Rails `response` or `Rack::MockResponse`), or a
+  bare body (a Hash or JSON String) with an explicit `status:`.
+- Without RSpec, `require "axn/openapi/testing"` and call `Axn::OpenAPI::Testing.document_errors(doc)`
+  / `.response_errors(doc, operation_id:, status:, body:)`, which return arrays of messages. The
+  `validate_document!` / `validate_response!` variants raise
+  `Axn::OpenAPI::Testing::ContractViolation` instead.
+
+A consumer that generates a client (`openapi-python-client generate --path openapi.json`, say) is
+the right place for a codegen smoke test: it runs in the consumer's own toolchain, against the
+document it actually builds against.
 
 ## Requirements
 

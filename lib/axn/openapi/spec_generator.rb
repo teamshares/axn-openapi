@@ -1,11 +1,18 @@
 # frozen_string_literal: true
 
+require "json"
+require "yaml"
+
 module Axn
   module OpenAPI
     # Assembles the OpenAPI 3.1 document from axn-core reflection. Near-mechanical: one POST path
     # per tool, requestBody = input_schema, 200 = output_schema, shared Error component for
     # failures, and the semantic hints as an x-axn-semantic-hints vendor extension.
     class SpecGenerator
+      # YAML of the document exactly as a JSON client receives it: the JSON round-trip turns the Symbol
+      # keys core's reflection emits into Strings (YAML would otherwise write `:required`).
+      def self.to_yaml(doc) = YAML.dump(JSON.parse(JSON.generate(doc)))
+
       # `security_schemes:` (name => OpenAPI security scheme, from Auth.security_schemes) documents how
       # the mount authenticates: published as `components.securitySchemes` plus a top-level `security`
       # listing them as alternatives, and a 401 on every operation. A 403 is documented where the
@@ -31,7 +38,13 @@ module Axn
         # calls the wrong root-level URL. Publish the mount base as the server when known; omit it for
         # a root mount ("" → OpenAPI's `/` default is already correct).
         doc["servers"] = [{ "url" => @servers_base }] unless @servers_base.empty?
+        # Newest version of each tool IN THIS DOCUMENT: an older one is documented deprecated (unless
+        # the tool sets `deprecated` itself). Document-local, like operationId.
+        @latest_versions = entries.to_h { |entry| [entry.axn.tool_name(:openapi), entry.axn.tool_version] }
         doc["paths"] = entries.to_h { |entry| [entry.path, path_item(entry)] }
+        tags = entries.flat_map { |entry| Array(Axn::OpenAPI.resolve_override_for(entry.axn, :operation_tags)) }.uniq
+        # `dup` each name: tags come from tool config, so a document edited in place must not reach back.
+        doc["tags"] = tags.map { |name| { "name" => name.dup } } unless tags.empty?
         doc["components"] = { "schemas" => { "Error" => error_schema } }
         unless @security_schemes.empty?
           # Fresh copies per document (see error_ref) — schemes may be shared frozen objects.
@@ -57,7 +70,8 @@ module Axn
           "operationId" => entry.operation_id,
           "requestBody" => request_body(input_schema, axn),
           "responses" => {
-            "200" => { "description" => "Success", "content" => { "application/json" => { "schema" => axn.output_schema } } },
+            "200" => { "description" => "Success",
+                       "content" => { "application/json" => media_type(axn.output_schema, axn, :response_example) } },
             "400" => error_response("Invalid request"),
             "422" => error_response("Operation could not be completed"),
             "500" => error_response("Internal server error"),
@@ -66,9 +80,29 @@ module Axn
         op["responses"]["401"] = error_response("Unauthorized") unless @security_schemes.empty?
         op["responses"]["403"] = error_response("Forbidden") if forbiddable?(axn)
         op["summary"] = axn.description if axn.description
+        tags = Axn::OpenAPI.resolve_override_for(axn, :operation_tags)
+        op["tags"] = tags.map(&:dup) if tags
+        op["deprecated"] = true if deprecated?(axn)
         hints = axn._semantic_hints.map(&:to_s)
         op["x-axn-semantic-hints"] = hints unless hints.empty?
         { "post" => op }
+      end
+
+      def deprecated?(axn)
+        forced = Axn::OpenAPI.resolve_override_for(axn, :deprecated)
+        return forced unless forced.nil?
+
+        axn.tool_version < @latest_versions.fetch(axn.tool_name(:openapi))
+      end
+
+      # A media type object, with the tool's declared example (if any) as `examples.default`. The
+      # example is JSON round-tripped: a fresh copy per document down to its leaf Strings (see
+      # error_ref), shaped exactly as a client receives it (String keys, Symbol values as Strings).
+      def media_type(schema, axn, example_setting)
+        media = { "schema" => schema }
+        example = Axn::OpenAPI.resolve_override_for(axn, example_setting)
+        media["examples"] = { "default" => { "value" => JSON.parse(JSON.generate(example)) } } if example
+        media
       end
 
       def forbiddable?(axn)
@@ -94,7 +128,7 @@ module Axn
         schema = schema.merge(additionalProperties: false) if Axn::OpenAPI.resolve_override_for(axn, :reject_undeclared_inputs)
         {
           "required" => Array(input_schema[:required]).any?,
-          "content" => { "application/json" => { "schema" => schema } },
+          "content" => { "application/json" => media_type(schema, axn, :request_example) },
         }
       end
 

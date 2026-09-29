@@ -4,6 +4,26 @@
 
 > **Before cutting a release:** these changes need `Axn::Extensions::Auth`, which is on axn `main` but not in a released axn yet. Raise the gemspec `axn` floor to the release that ships it (alpha 7, PRO-3301) and drop the temporary `gem "axn", git: …` pins in `Gemfile` and `spec_rails/dummy_app/Gemfile`.
 
+- `[FEAT]` Contract-test helper for consumers: `require "axn/openapi/testing"` (plain methods) or `"axn/openapi/testing/rspec"` (matchers). It is opt-in and backed by `json_schemer`, which the consumer adds to its test group; it isn't a runtime dependency. A missing `json_schemer` raises `Axn::OpenAPI::Error` saying so.
+  - `be_a_valid_openapi_document` / `Testing.document_errors(doc)`: the OpenAPI 3.1 metaschema, then each declared `request_example` / `response_example` against its operation's schema.
+  - `match_openapi_response(doc, operation_id:, status: nil)` / `Testing.response_errors(...)`: a body against the response schema the operation documents for that status, resolving the shared `Error` `$ref`. It takes a response object (reading its `status`) or a bare Hash/JSON body with `status:`. An unknown operation or undocumented status is reported as an error, not skipped.
+  - `validate_document!` / `validate_response!` raise `Axn::OpenAPI::Testing::ContractViolation`.
+  - `[INTERNAL]` The gem's own suite now uses these matchers.
+- `[FEAT]` The document is also available as YAML.
+  - `Axn::OpenAPI.spec_yaml(...)` takes `.spec`'s arguments and returns a YAML String. Keys are Strings, exactly as a JSON client receives them, via a JSON round-trip, so no Ruby `:symbol` keys leak.
+  - A mount serves it at the new `spec_yaml_path` setting (default `"/openapi.yaml"`, `nil` turns it off) as `application/yaml`. It's authenticated like `spec_path`, including the `public_spec:` exemption, and is GET-only (a JSON 405 + `Allow: GET` otherwise).
+  - Build time fails if it collides with a tool route or with `spec_path`.
+  - If building the document raises (JSON or YAML), the mount now answers the generic 500 and logs the error, instead of raising out of the Rack app.
+  - `[INTERNAL]` `Dispatch` gains a `format` member (`:json` by default; existing positional construction is unchanged), rendered by the new `Response.for`.
+- `[FEAT]` Four per-tool documentation settings, set via `tool openapi: { … }` or `configure(:openapi)`. They shape only the published document.
+  - `operation_tags` (non-empty Array of Strings) → the operation's `tags`, plus a top-level `tags` list naming each once. Not called `tags`, to avoid confusion with axn's `tag` telemetry DSL.
+  - `deprecated`: **automatic by default.** A tool version is published `deprecated: true` when the same document also carries a newer version of that tool; `true`/`false` forces it. Judged per document, so a mount serving only v1 doesn't mark it. Documents that already serve several versions of a tool now mark the older ones deprecated.
+  - `request_example` / `response_example` (a Hash) → the request body's / `200`'s `examples.default`, JSON-shaped, a fresh copy per document. An example with no JSON rendering (a NaN, a cycle, invalid bytes) is refused at declaration. Conformance to the schemas isn't checked at runtime (see the contract-test helper).
+- `[BUGFIX]` A mount no longer buffers the request body before authenticating it (flagged in the PRO-3566 security review).
+  - **Old:** `Request.from_rack` read `rack.input` in full up front, so an anonymous request bound for a 401 still had its whole body read into memory. **New:** `Request#raw_body` reads it on first call, memoized. The App reads it only when a tool is actually dispatched, so 401/403/404/405 and spec-document requests never touch it.
+  - A strategy that needs the body (a signature check, say) can still call `request.raw_body` during authentication; dispatch reuses that read.
+  - `Request#inspect` doesn't force the read. It shows the body's byte size only once the body has been read.
+  - `Request.new(raw_body: "…")` is unchanged. The internal `Router#route` now also accepts a zero-arity callable for `raw_body:`.
 - `[FEAT]` New `Axn::OpenAPI.config.path_segment_style` (`:snake` by default, or `:kebab`), for apps whose route convention is kebab-case.
   - `:kebab` serves a multi-word tool at `/list-integrations/v1` instead of `/list_integrations/v1`. Only the URL segment changes; `tool_name` and `operationId` (`list_integrations_v1`) stay snake_case.
   - An app captures the style when it's built, so its routing and its served document can't drift apart.

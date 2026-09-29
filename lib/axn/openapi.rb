@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "axn"
+require "json"
 require "active_support/deprecation"
 
 require_relative "openapi/version"
@@ -16,6 +17,8 @@ module Axn
     # Route surface.
     setting :path_prefix, default: ""
     setting :spec_path, default: "/openapi.json"
+    # The same document as YAML (`application/yaml`), gated exactly like `spec_path`; nil turns it off.
+    setting :spec_yaml_path, default: "/openapi.yaml"
     # How a tool_name is rendered as its URL path segment. `:snake` serves the tool_name as-is
     # (`/list_integrations/v1`); `:kebab` hyphenates it (`/list-integrations/v1`) for apps whose
     # route convention is kebab-case. Only the path changes — tool_name and operationId stay
@@ -60,6 +63,39 @@ module Axn
                                   (v.is_a?(Array) && v.any? && v.all? { |c| c.is_a?(String) || c.is_a?(Symbol) }) ||
                                   "allowed_callers must be a non-empty Array of principal ids (String/Symbol), or nil"
                               }
+
+    # Documentation only — none of these change how a request is served.
+    #
+    # The operation's OpenAPI `tags`, which docs viewers group by and client generators name modules
+    # after (`api/credentials/…`, `CredentialsApi`). Not `tags`: that would read as axn's own `tag`
+    # (telemetry facets on the axn.call event and span).
+    setting :operation_tags, default: nil, overridable: true,
+                             validate: lambda { |v|
+                               v.nil? || (v.is_a?(Array) && v.any? && v.all?(String)) ||
+                                 "operation_tags must be a non-empty Array of Strings, or nil"
+                             }
+    # `nil` (the default) deprecates a version exactly when the document also carries a newer version
+    # of the same tool; true/false forces it either way.
+    setting :deprecated, default: nil, overridable: true, one_of: [nil, true, false]
+    # One example request body / 200 body, published as the media type's `examples.default`. A single
+    # value rather than a Hash of named examples, which would be ambiguous with a Hash body. Checked for
+    # JSON-encodability at declaration: the document JSON round-trips it on every build, so a NaN, a
+    # cycle, or invalid bytes would otherwise make every spec request raise.
+    def self.example_error(name, value, body)
+      return nil if value.nil?
+      return "#{name} must be a Hash (#{body}), or nil" unless value.is_a?(Hash)
+
+      JSON.generate(value)
+      nil
+    rescue StandardError, SystemStackError => e
+      "#{name} must be JSON-encodable (#{e.class}: #{e.message})"
+    end
+    private_class_method :example_error
+
+    setting :request_example, default: nil, overridable: true,
+                              validate: ->(v) { example_error("request_example", v, "a request body") || true }
+    setting :response_example, default: nil, overridable: true,
+                               validate: ->(v) { example_error("response_example", v, "a 200 body") || true }
 
     # OpenAPI `info` object (title + version are required by the spec format).
     setting :info_title, default: "Axn API"
@@ -125,6 +161,11 @@ module Axn
       security_schemes = auth.nil? ? {} : Auth.security_schemes(Auth.strategies_for(auth))
       SpecGenerator.new(tools: tools || self.tools(mount:), path_prefix:, info:, security_schemes:,
                         authorize_all: !authorize.nil?).generate
+    end
+
+    # `.spec` rendered as YAML — what the mount serves at `spec_yaml_path`.
+    def self.spec_yaml(**)
+      SpecGenerator.to_yaml(spec(**))
     end
 
     # Register :openapi with core's process-global registry, passing this module as the config
