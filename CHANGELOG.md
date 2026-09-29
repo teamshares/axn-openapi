@@ -24,6 +24,7 @@
   - A strategy that needs the body (a signature check, say) can still call `request.raw_body` during authentication; dispatch reuses that read.
   - `Request#inspect` doesn't force the read. It shows the body's byte size only once the body has been read.
   - `Request.new(raw_body: "…")` is unchanged. The internal `Router#route` now also accepts a zero-arity callable for `raw_body:`.
+- `[INTERNAL]` The request body carries axn core's input-schema residue prose unchanged. Core writes each constraint JSON Schema can't express into the property's `description` ("Additional constraints apply that JSON Schema cannot express: …"), at the top level and in nested properties, and this gem serves those descriptions byte-for-byte without adding prose of its own. A spec now pins that every request-body `description` in the served document equals core's `input_schema` at the same path, so the wording matches the other tool adapters.
 - `[FEAT]` New `Axn::OpenAPI.config.path_segment_style` (`:snake` by default, or `:kebab`), for apps whose route convention is kebab-case.
   - `:kebab` serves a multi-word tool at `/list-integrations/v1` instead of `/list_integrations/v1`. Only the URL segment changes; `tool_name` and `operationId` (`list_integrations_v1`) stay snake_case.
   - An app captures the style when it's built, so its routing and its served document can't drift apart.
