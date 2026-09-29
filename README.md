@@ -411,6 +411,9 @@ Axn::OpenAPI.config.path_prefix = "/axns"
 | `reject_opaque_exposed_values` | `true` (strict) | `true`: an exposed value with no JSON rendering *its author declared* is a 500 rather than a body containing `"#<User:0x...>"` (or, in Rails, an instance-variable dump). `false`: that rendering ships, matching axn-mcp's default. See [Rejecting opaque exposed values](#rejecting-opaque-exposed-values-reject_opaque_exposed_values). |
 | `mount` | `nil` | Per tool (`tool openapi: { mount: :name }`): which mount serves it. See [Mounts](#mounts-keeping-tool-sets-apart). |
 | `allowed_callers` | `nil` | Per tool: principal ids allowed to call it (non-empty Array); `nil` admits any authenticated caller. See [403](#authorization-403). |
+| `operation_tags` | `nil` | Per tool: the operation's OpenAPI `tags` (a non-empty Array of Strings). Docs viewers group operations by tag, and client generators name modules/classes after them (`openapi-python-client` writes `api/credentials/…`; untagged operations land in `api/default/`). Named `operation_tags`, not `tags`, so it isn't mistaken for axn's `tag` telemetry DSL. See [Documenting operations](#documenting-operations). |
+| `deprecated` | `nil` (auto) | Per tool: `nil` marks a version `deprecated: true` exactly when the same document also serves a newer version of that tool; `true`/`false` forces it. |
+| `request_example` / `response_example` | `nil` | Per tool: one example request body / `200` body (a Hash), published as the media type's `examples.default`. |
 | `info_title` | `"Axn API"` | OpenAPI `info.title`. |
 | `info_version` | `"1.0.0"` | OpenAPI `info.version`. |
 | `info_description` | `nil` | OpenAPI `info.description`; omitted from the document when nil. |
@@ -439,8 +442,39 @@ An override is honored by the generated document as well as at runtime: a tool w
 `reject_undeclared_inputs = true` publishes `additionalProperties: false` on *its* request schema only,
 so generated clients and OpenAPI validators match what the endpoint actually enforces.
 
+The documentation settings (`operation_tags`, `deprecated`, `request_example`, `response_example`)
+are per tool too; see [Documenting operations](#documenting-operations).
+
 The remaining settings are gem-wide only — `path_prefix` / `spec_path` / `tool_roots` describe the
 mount and the registry rather than a tool, and the `info_*` values describe the one document.
+
+### Documenting operations
+
+Four per-tool settings shape only the published document; none of them changes how a request is served:
+
+```ruby
+class ListIntegrations
+  include Axn
+
+  tool openapi: {
+    operation_tags: ["Integrations"],                        # => "tags": ["Integrations"]
+    request_example: { company_uuid: "c-1" },                # => requestBody examples.default
+    response_example: { integrations: [{ name: "gusto" }] }, # => 200 examples.default
+  }
+  # ...
+end
+```
+
+- **`operation_tags`**: the operation's `tags`. The document also gets a top-level `tags` list naming
+  each tag once. Decide on tags before a consumer generates a client: they become its module and
+  class names, so adding them later renames the consumer's imports.
+- **`deprecated`**: automatic by default. When `/list_integrations/v1` and `/list_integrations/v2` are
+  in the same document, v1 is published `deprecated: true`. Set `deprecated: false` to keep an older
+  version undeprecated, or `true` to deprecate the latest. It's judged per document, so a mount that
+  serves only v1 doesn't mark it deprecated.
+- **`request_example` / `response_example`**: one example body each, keys stringified. They aren't
+  checked at runtime; the [contract-test helper](#contract-testing-a-mount) validates them against
+  the operation's schemas.
 
 ## Rejecting opaque exposed values (`reject_opaque_exposed_values`)
 
@@ -564,7 +598,8 @@ Pass `auth:` (and `authorize:`) to document security exactly as `.app` would:
 One `POST` path per tool *version* (`/{tool}/v{n}`; `operationId` is `{tool}_v{n}`, `summary` from
 `description`), `requestBody`/`200` schemas taken verbatim from that version's own
 `input_schema`/`output_schema`, and `400`/`422`/`500` responses referencing the shared `Error`
-component. A non-empty `semantic_hints` declaration is emitted as the `x-axn-semantic-hints` vendor
+component. `tags`, `deprecated`, and request/response `examples` come from the
+[documentation settings](#documenting-operations). A non-empty `semantic_hints` declaration is emitted as the `x-axn-semantic-hints` vendor
 extension (an array).
 
 ## Requirements

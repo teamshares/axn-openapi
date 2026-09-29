@@ -61,6 +61,26 @@ module Axn
                                   "allowed_callers must be a non-empty Array of principal ids (String/Symbol), or nil"
                               }
 
+    # Documentation only — none of these change how a request is served.
+    #
+    # The operation's OpenAPI `tags`, which docs viewers group by and client generators name modules
+    # after (`api/credentials/…`, `CredentialsApi`). Not `tags`: that would read as axn's own `tag`
+    # (telemetry facets on the axn.call event and span).
+    setting :operation_tags, default: nil, overridable: true,
+                             validate: lambda { |v|
+                               v.nil? || (v.is_a?(Array) && v.any? && v.all?(String)) ||
+                                 "operation_tags must be a non-empty Array of Strings, or nil"
+                             }
+    # `nil` (the default) deprecates a version exactly when the document also carries a newer version
+    # of the same tool; true/false forces it either way.
+    setting :deprecated, default: nil, overridable: true, one_of: [nil, true, false]
+    # One example request body / 200 body, published as the media type's `examples.default`. A single
+    # value rather than a Hash of named examples, which would be ambiguous with a Hash body.
+    setting :request_example, default: nil, overridable: true,
+                              validate: ->(v) { v.nil? || v.is_a?(Hash) || "request_example must be a Hash (a request body), or nil" }
+    setting :response_example, default: nil, overridable: true,
+                               validate: ->(v) { v.nil? || v.is_a?(Hash) || "response_example must be a Hash (a 200 body), or nil" }
+
     # OpenAPI `info` object (title + version are required by the spec format).
     setting :info_title, default: "Axn API"
     setting :info_version, default: "1.0.0"
