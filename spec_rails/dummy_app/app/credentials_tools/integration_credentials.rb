@@ -5,7 +5,13 @@
 class IntegrationCredentials
   include Axn
 
-  tool openapi: { mount: :credentials, allowed_callers: ["data_pipeline"] }
+  tool openapi: {
+    mount: :credentials,
+    allowed_callers: ["data_pipeline"],
+    operation_tags: ["Credentials"],
+    request_example: { company_uuid: "c-1" },
+    response_example: { company_uuid: "c-1", read_by: "data_pipeline", client_secret_ciphertext: "ciphertext-b64" },
+  }
   description "Returns an integration's encrypted credentials."
   expects :company_uuid, type: String
   expects :caller_id, on: :ambient_context, type: String

@@ -620,6 +620,47 @@ npx @redocly/cli lint openapi.json           # style/consistency checks
 The OpenAPI and Swagger Viewer extensions for VS Code render `openapi.json` / `openapi.yaml`
 directly.
 
+## Contract-testing a mount
+
+`axn/openapi/testing` checks, in your own suite, that a mount's document is sound and that its
+responses match it. It uses [json_schemer](https://github.com/davishmcclurg/json_schemer), which
+isn't a runtime dependency: add it to your test group.
+
+```ruby
+# Gemfile
+group :test do
+  gem "json_schemer", "~> 2.4"
+end
+
+# spec/requests/credentials_api_spec.rb
+require "axn/openapi/testing/rspec"
+
+it "publishes a valid document and honors it" do
+  get "/internal/credentials/openapi.json", headers: { "Authorization" => "Bearer #{key}" }
+  doc = response.parsed_body
+  expect(doc).to be_a_valid_openapi_document   # OpenAPI 3.1 metaschema + every declared example
+
+  post "/internal/credentials/integration_credentials/v1", params: { company_uuid: "c-1" }.to_json,
+       headers: { "Authorization" => "Bearer #{key}", "Content-Type" => "application/json" }
+  expect(response).to match_openapi_response(doc, operation_id: "integration_credentials_v1")
+end
+```
+
+- `be_a_valid_openapi_document` validates against the OpenAPI 3.1 metaschema. For a document that
+  passes, it also checks each `request_example` / `response_example` against its operation's schema.
+- `match_openapi_response(doc, operation_id:, status: nil)` validates a body against the response
+  schema that operation documents for the status. It resolves the shared `Error` `$ref`. It accepts
+  a response object (`#status` and `#body`, e.g. a Rails `response` or `Rack::MockResponse`), or a
+  bare body (a Hash or JSON String) with an explicit `status:`.
+- Without RSpec, `require "axn/openapi/testing"` and call `Axn::OpenAPI::Testing.document_errors(doc)`
+  / `.response_errors(doc, operation_id:, status:, body:)`, which return arrays of messages. The
+  `validate_document!` / `validate_response!` variants raise
+  `Axn::OpenAPI::Testing::ContractViolation` instead.
+
+A consumer that generates a client (`openapi-python-client generate --path openapi.json`, say) is
+the right place for a codegen smoke test: it runs in the consumer's own toolchain, against the
+document it actually builds against.
+
 ## Requirements
 
 - Ruby >= 3.2.1
