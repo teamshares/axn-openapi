@@ -83,6 +83,16 @@ RSpec.describe "documentation settings in the generated document" do
       expect(fresh).to eq("company_uuid" => "c-1", "filters" => { "active" => true })
     end
 
+    it "refuses an example with no JSON rendering at declaration, so serving the document can't raise" do
+      expect { Axn::OpenAPI.config.request_example = { n: Float::NAN } }.to raise_error(ArgumentError, /request_example must be JSON-encodable/)
+      invalid_utf8 = "\xFF".b.force_encoding("UTF-8")
+      expect { Axn::OpenAPI.config.response_example = { s: invalid_utf8 } }
+        .to raise_error(ArgumentError, /response_example must be JSON-encodable/)
+      cycle = {}
+      cycle[:self] = cycle
+      expect { Axn::OpenAPI.config.request_example = cycle }.to raise_error(ArgumentError, /request_example must be JSON-encodable/)
+    end
+
     it "accepts only a Hash (or nil)" do
       expect { Axn::OpenAPI.config.request_example = "x" }.to raise_error(ArgumentError, /request_example/)
       expect { Axn::OpenAPI.config.response_example = [1] }.to raise_error(ArgumentError, /response_example/)

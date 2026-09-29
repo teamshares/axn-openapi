@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "axn"
+require "json"
 require "active_support/deprecation"
 
 require_relative "openapi/version"
@@ -77,11 +78,24 @@ module Axn
     # of the same tool; true/false forces it either way.
     setting :deprecated, default: nil, overridable: true, one_of: [nil, true, false]
     # One example request body / 200 body, published as the media type's `examples.default`. A single
-    # value rather than a Hash of named examples, which would be ambiguous with a Hash body.
+    # value rather than a Hash of named examples, which would be ambiguous with a Hash body. Checked for
+    # JSON-encodability at declaration: the document JSON round-trips it on every build, so a NaN, a
+    # cycle, or invalid bytes would otherwise make every spec request raise.
+    def self.example_error(name, value, body)
+      return nil if value.nil?
+      return "#{name} must be a Hash (#{body}), or nil" unless value.is_a?(Hash)
+
+      JSON.generate(value)
+      nil
+    rescue StandardError, SystemStackError => e
+      "#{name} must be JSON-encodable (#{e.class}: #{e.message})"
+    end
+    private_class_method :example_error
+
     setting :request_example, default: nil, overridable: true,
-                              validate: ->(v) { v.nil? || v.is_a?(Hash) || "request_example must be a Hash (a request body), or nil" }
+                              validate: ->(v) { example_error("request_example", v, "a request body") || true }
     setting :response_example, default: nil, overridable: true,
-                               validate: ->(v) { v.nil? || v.is_a?(Hash) || "response_example must be a Hash (a 200 body), or nil" }
+                               validate: ->(v) { example_error("response_example", v, "a 200 body") || true }
 
     # OpenAPI `info` object (title + version are required by the spec format).
     setting :info_title, default: "Axn API"
