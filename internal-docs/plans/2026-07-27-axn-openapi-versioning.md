@@ -6,7 +6,7 @@
 
 **Architecture:** Introduce one builder, `Axn::OpenAPI::RouteTable`, that turns the all-versions tool list into an ordered list of `RouteEntry(path, axn, operation_id)`. `Router` builds its dispatch map from it; `SpecGenerator` emits one OpenAPI path per entry. Both call the same builder with the same inputs, so routes and doc can't drift. Dispatcher, Response, Serializer, status/envelope semantics are unchanged.
 
-**Tech Stack:** Ruby ≥ 3.2.1, `axn` (must include PRO-2955/#197 — `tool_version`, `tools_for(all_versions:)`), `rack`, RSpec, RuboCop. Design spec: `internal-docs/specs/2026-07-27-axn-openapi-versioning-design.md`.
+**Tech Stack:** Ruby ≥ 3.3, `axn` (must include PRO-2955/#197 — `tool_version`, `tools_for(all_versions:)`), `rack`, RSpec, RuboCop. Design spec: `internal-docs/specs/2026-07-27-axn-openapi-versioning-design.md`.
 
 ## Global Constraints
 
