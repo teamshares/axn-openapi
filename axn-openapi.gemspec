@@ -13,8 +13,8 @@ Gem::Specification.new do |spec|
   spec.homepage = "https://github.com/teamshares/axn-openapi"
   spec.license = "MIT"
 
-  # axn requires Ruby 3.2.1+ (Data.define, Vernier profiling).
-  spec.required_ruby_version = ">= 3.2.1"
+  # axn requires Ruby 3.3+ (Data.define, Vernier profiling).
+  spec.required_ruby_version = ">= 3.3"
 
   spec.metadata["homepage_uri"] = spec.homepage
   spec.metadata["source_code_uri"] = spec.homepage

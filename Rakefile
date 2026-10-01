@@ -10,7 +10,9 @@ RSpec::Core::RakeTask.new(:spec)
 # bundle (so the default suite stays Rails-free). Kept out of the default task for that reason.
 task :spec_rails do
   Dir.chdir("spec_rails/dummy_app") do
-    sh "BUNDLE_GEMFILE=Gemfile bundle exec rspec spec/"
+    # Bundler 4's `bundle exec` exports BUNDLE_LOCKFILE for the outer bundle; run unbundled so the
+    # dummy app resolves its own Gemfile.
+    Bundler.with_unbundled_env { sh "BUNDLE_GEMFILE=Gemfile bundle exec rspec spec/" }
   end
 end
 

@@ -6,11 +6,11 @@
 
 **Architecture:** One transport-agnostic core (`Dispatcher`) that runs a tool through `Axn::Tools::Invoker` and maps the `Axn::Result` to `{status, body}`, with three thin skins over it: a mountable Rack app (`App` + `Router`), a controller mixin (`Controller#render_axn`), and a spec generator (`SpecGenerator`). All read the same axn-core reflection surface (`input_schema`/`output_schema`/`tool_name`/`_semantic_hints`) and add no parallel path.
 
-**Tech Stack:** Ruby ≥ 3.2.1, `axn` (core), `rack` (request/response), RSpec, RuboCop. Spec design: `internal-docs/specs/2026-07-18-axn-openapi-design.md`.
+**Tech Stack:** Ruby ≥ 3.3, `axn` (core), `rack` (request/response), RSpec, RuboCop. Spec design: `internal-docs/specs/2026-07-18-axn-openapi-design.md`.
 
 ## Global Constraints
 
-- **Ruby ≥ 3.2.1**; depend only on `axn` (`>= 0.1.0-alpha.4.3, < 0.2.0`) + `rack` at runtime.
+- **Ruby ≥ 3.3**; depend only on `axn` (`>= 0.1.0-alpha.4.3, < 0.2.0`) + `rack` at runtime.
 - **Works outside Rails** — guard every `Rails`/`ActiveRecord`/`ActiveJob` reference with `defined?(...)`. Core (`Dispatcher`, `Router`, `App`, `SpecGenerator`, `Serializer`, `Response`, `Request`) must never require Rails.
 - **Module namespace is `Axn::OpenAPI`** (acronym casing, like `Axn::MCP`) — normalize the scaffolded `Axn::Openapi` in Task 1. Files stay under `lib/axn/openapi/`.
 - **No parallel path** — reuse `Axn::Tools::Invoker`, `Axn::Reflection::Values.serialize_exposed`, `axn_class.input_schema`/`output_schema`/`external_field_configs`/`tool_name(:openapi)`/`_semantic_hints`/`description`. Never reimplement schema or serialization.

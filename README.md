@@ -663,7 +663,7 @@ document it actually builds against.
 
 ## Requirements
 
-- Ruby >= 3.2.1
+- Ruby >= 3.3
 - [axn](https://github.com/teamshares/axn) — the prerelease that ships `Axn::Extensions::Auth` (see the gemspec), < 0.2.0
 - [rack](https://github.com/rack/rack) >= 2.2
 

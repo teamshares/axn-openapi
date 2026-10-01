@@ -4,6 +4,7 @@
 
 > **Before cutting a release:** these changes need `Axn::Extensions::Auth`, which is on axn `main` but not in a released axn yet. Raise the gemspec `axn` floor to the release that ships it (alpha 7, PRO-3301) and drop the temporary `gem "axn", git: …` pins in `Gemfile` and `spec_rails/dummy_app/Gemfile`.
 
+- `[BREAKING]` Requires Ruby >= 3.3 (was >= 3.2.1), following axn core dropping the end-of-life Ruby 3.2. CI now runs Ruby 3.3, 3.4 and 4.0.
 - `[FEAT]` Contract-test helper for consumers: `require "axn/openapi/testing"` (plain methods) or `"axn/openapi/testing/rspec"` (matchers). It is opt-in and backed by `json_schemer`, which the consumer adds to its test group; it isn't a runtime dependency. A missing `json_schemer` raises `Axn::OpenAPI::Error` saying so.
   - `be_a_valid_openapi_document` / `Testing.document_errors(doc)`: the OpenAPI 3.1 metaschema, then each declared `request_example` / `response_example` against its operation's schema.
   - `match_openapi_response(doc, operation_id:, status: nil)` / `Testing.response_errors(...)`: a body against the response schema the operation documents for that status, resolving the shared `Error` `$ref`. It takes a response object (reading its `status`) or a bare Hash/JSON body with `status:`. An unknown operation or undocumented status is reported as an error, not skipped.
